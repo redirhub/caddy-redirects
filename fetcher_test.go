@@ -2,11 +2,16 @@ package redirhub
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 func TestFetch304KeepsCopy(t *testing.T) {
@@ -152,5 +157,27 @@ func TestPollLoop(t *testing.T) {
 func TestRedactURL(t *testing.T) {
 	if got := redactURL("https://rules.example.test/abc/SECRET.txt"); got != "https://rules.example.test/…" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestFetchErrorDoesNotLogTheToken(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	srv := httptest.NewServer(http.NotFoundHandler())
+	addr := srv.URL
+	srv.Close() // nothing listens any more: the download fails in the client
+	f := newFetcher(addr+"/abc/SECRET.txt", zap.New(core), "")
+	f.fetch(context.Background())
+
+	entries := logs.All()
+	if len(entries) != 1 {
+		t.Fatalf("logged %d entries", len(entries))
+	}
+	for k, v := range entries[0].ContextMap() {
+		if s := fmt.Sprint(v); strings.Contains(s, "SECRET") {
+			t.Errorf("%s = %q holds the token", k, s)
+		}
+	}
+	if got := fmt.Sprint(entries[0].ContextMap()["error"]); !strings.Contains(got, "…") {
+		t.Errorf("error = %q, want the redacted URL", got)
 	}
 }

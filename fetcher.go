@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -172,6 +173,11 @@ func (f *fetcher) fetchOnce(ctx context.Context) error {
 	}
 	resp, err := f.client.Do(req)
 	if err != nil {
+		// The client's error quotes the URL, whose path holds the file's token.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			ue.URL = redactURL(ue.URL)
+		}
 		return err
 	}
 	defer resp.Body.Close()
