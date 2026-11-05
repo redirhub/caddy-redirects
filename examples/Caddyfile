@@ -1,0 +1,23 @@
+{
+	# Optional: redirhub already runs before redir by default.
+	order redirhub before redir
+
+	# Optional: issue certificates on demand, only for hostnames
+	# listed in the RedirHub rules.
+	on_demand_tls {
+		permission redirhub
+	}
+}
+
+https:// {
+	tls {
+		on_demand
+	}
+
+	redirhub {
+		rules_url https://rules.rediredge.com/abc123/TOKEN.txt
+		key {env.REDIRHUB_INTEGRATION_KEY}
+	}
+
+	reverse_proxy localhost:8080
+}

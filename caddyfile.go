@@ -1,0 +1,104 @@
+// Copyright 2026 RedirHub
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package redirhub
+
+import (
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+)
+
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("redirhub", parseCaddyfile)
+	// Exact redirects run before redir and the site's own routes, so no
+	// global `order` option is needed.
+	httpcaddyfile.RegisterDirectiveOrder("redirhub", httpcaddyfile.Before, "redir")
+}
+
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	m := new(Handler)
+	err := m.UnmarshalCaddyfile(h.Dispenser)
+	return m, err
+}
+
+// UnmarshalCaddyfile sets up the handler from Caddyfile tokens:
+//
+//	redirhub [<rules_url>] {
+//		rules_url <url>
+//		key       <integration key>
+//	}
+func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // directive name
+	if d.NextArg() {
+		h.RulesURL = d.Val()
+	}
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "rules_url":
+			if !d.AllArgs(&h.RulesURL) {
+				return d.ArgErr()
+			}
+		case "key":
+			if !d.AllArgs(&h.Key) {
+				return d.ArgErr()
+			}
+		default:
+			return d.Errf("unrecognized redirhub option '%s'", d.Val())
+		}
+	}
+	if h.RulesURL == "" {
+		return d.Err("redirhub: rules_url is required")
+	}
+	return nil
+}
+
+// UnmarshalCaddyfile sets up the permission module:
+//
+//	permission redirhub [<rules_url>]
+//
+// or
+//
+//	permission redirhub {
+//		rules_url <url>
+//	}
+func (p *Permission) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	d.Next() // module name
+	if d.NextArg() {
+		p.RulesURL = d.Val()
+	}
+	if d.NextArg() {
+		return d.ArgErr()
+	}
+	for d.NextBlock(0) {
+		switch d.Val() {
+		case "rules_url":
+			if !d.AllArgs(&p.RulesURL) {
+				return d.ArgErr()
+			}
+		default:
+			return d.Errf("unrecognized redirhub permission option '%s'", d.Val())
+		}
+	}
+	return nil
+}
+
+// Interface guards
+var (
+	_ caddyfile.Unmarshaler = (*Handler)(nil)
+	_ caddyfile.Unmarshaler = (*Permission)(nil)
+)

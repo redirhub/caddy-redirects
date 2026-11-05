@@ -1,0 +1,49 @@
+{
+	"apps": {
+		"http": {
+			"servers": {
+				"srv0": {
+					"listen": [
+						":443"
+					],
+					"routes": [
+						{
+							"handle": [
+								{
+									"handler": "redirhub",
+									"key": "{env.REDIRHUB_INTEGRATION_KEY}",
+									"rules_url": "https://rules.rediredge.com/abc123/TOKEN.txt"
+								},
+								{
+									"handler": "reverse_proxy",
+									"upstreams": [
+										{
+											"dial": "localhost:8080"
+										}
+									]
+								}
+							]
+						}
+					],
+					"tls_connection_policies": [
+						{}
+					]
+				}
+			}
+		},
+		"tls": {
+			"automation": {
+				"policies": [
+					{
+						"on_demand": true
+					}
+				],
+				"on_demand": {
+					"permission": {
+						"module": "redirhub"
+					}
+				}
+			}
+		}
+	}
+}

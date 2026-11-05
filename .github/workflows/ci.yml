@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -race ./...
+      - name: Build Caddy with the module
+        run: |
+          go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+          xcaddy build --with github.com/redirhub/caddy-redirhub=. --output ./caddy
+          ./caddy list-modules | grep -q '^http.handlers.redirhub$'
+          ./caddy list-modules | grep -q '^tls.permission.redirhub$'
+          REDIRHUB_INTEGRATION_KEY=test ./caddy validate --config examples/Caddyfile

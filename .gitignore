@@ -1,0 +1,4 @@
+/caddy
+/caddy.exe
+*.test
+*.out
