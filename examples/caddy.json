@@ -10,7 +10,7 @@
 						{
 							"handle": [
 								{
-									"handler": "redirhub",
+									"handler": "redirects",
 									"key": "{env.REDIRHUB_INTEGRATION_KEY}",
 									"rules_url": "https://rules.rediredge.com/abc123/TOKEN.txt"
 								},
@@ -40,7 +40,7 @@
 				],
 				"on_demand": {
 					"permission": {
-						"module": "redirhub"
+						"module": "redirects"
 					}
 				}
 			}

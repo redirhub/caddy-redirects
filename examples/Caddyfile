@@ -1,11 +1,11 @@
 {
-	# Optional: redirhub already runs before redir by default.
-	order redirhub before redir
+	# Optional: redirects already runs before redir by default.
+	order redirects before redir
 
 	# Optional: issue certificates on demand, only for hostnames
 	# listed in the RedirHub rules.
 	on_demand_tls {
-		permission redirhub
+		permission redirects
 	}
 }
 
@@ -14,7 +14,7 @@ https:// {
 		on_demand
 	}
 
-	redirhub {
+	redirects {
 		rules_url https://rules.rediredge.com/abc123/TOKEN.txt
 		key {env.REDIRHUB_INTEGRATION_KEY}
 	}

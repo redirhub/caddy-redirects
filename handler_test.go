@@ -1,4 +1,4 @@
-package redirhub
+package redirects
 
 import (
 	"context"
@@ -184,7 +184,7 @@ func TestSiteErrorPassesThrough(t *testing.T) {
 }
 
 func TestUnmarshalCaddyfile(t *testing.T) {
-	d := caddyfile.NewTestDispenser(`redirhub {
+	d := caddyfile.NewTestDispenser(`redirects {
 		rules_url https://rules.example.test/abc/TOKEN.txt
 		key reh_int_secret
 	}`)
@@ -196,13 +196,13 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 		t.Errorf("got %+v", h)
 	}
 
-	d = caddyfile.NewTestDispenser(`redirhub https://rules.example.test/x.txt`)
+	d = caddyfile.NewTestDispenser(`redirects https://rules.example.test/x.txt`)
 	h = Handler{}
 	if err := h.UnmarshalCaddyfile(d); err != nil || h.RulesURL != "https://rules.example.test/x.txt" {
 		t.Errorf("inline form: %v %+v", err, h)
 	}
 
-	for _, bad := range []string{`redirhub`, `redirhub { key k }`, `redirhub { bogus 1 }`, `redirhub a b`, "redirhub {\n rules_url\n}", "redirhub {\n rules_url a b\n}"} {
+	for _, bad := range []string{`redirects`, `redirects { key k }`, `redirects { bogus 1 }`, `redirects a b`, "redirects {\n rules_url\n}", "redirects {\n rules_url a b\n}"} {
 		h = Handler{}
 		if err := h.UnmarshalCaddyfile(caddyfile.NewTestDispenser(bad)); err == nil {
 			t.Errorf("%q: expected an error", bad)
@@ -210,10 +210,10 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 	}
 
 	var p Permission
-	if err := p.UnmarshalCaddyfile(caddyfile.NewTestDispenser(`redirhub`)); err != nil || p.RulesURL != "" {
+	if err := p.UnmarshalCaddyfile(caddyfile.NewTestDispenser(`redirects`)); err != nil || p.RulesURL != "" {
 		t.Errorf("permission: %v %+v", err, p)
 	}
-	if err := p.UnmarshalCaddyfile(caddyfile.NewTestDispenser("redirhub {\n rules_url https://r.example.test/x.txt\n}")); err != nil || p.RulesURL != "https://r.example.test/x.txt" {
+	if err := p.UnmarshalCaddyfile(caddyfile.NewTestDispenser("redirects {\n rules_url https://r.example.test/x.txt\n}")); err != nil || p.RulesURL != "https://r.example.test/x.txt" {
 		t.Errorf("permission block: %v %+v", err, p)
 	}
 }

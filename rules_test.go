@@ -1,4 +1,4 @@
-package redirhub
+package redirects
 
 import (
 	"errors"

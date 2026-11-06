@@ -1,4 +1,4 @@
-package redirhub
+package redirects
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "redirhub-test-")
+	dir, err := os.MkdirTemp("", "redirects-test-")
 	if err != nil {
 		panic(err)
 	}

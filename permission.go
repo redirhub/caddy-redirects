@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redirhub
+package redirects
 
 import (
 	"context"
@@ -28,10 +28,10 @@ var ErrNotListed = errors.New("hostname is not listed in the RedirHub rules")
 
 // Permission allows an on-demand TLS certificate only for hostnames listed
 // with @host in a RedirHub rules file. It reads the same copy of the rules
-// as the redirhub handler.
+// as the redirects handler.
 //
 // With rules_url it checks that file (and polls it itself if no handler
-// does). Without it, a hostname listed in any rules file that a redirhub
+// does). Without it, a hostname listed in any rules file that a redirects
 // handler of this Caddy instance has loaded is allowed.
 type Permission struct {
 	// The workspace rules address; optional.
@@ -44,7 +44,7 @@ type Permission struct {
 // CaddyModule returns the Caddy module information.
 func (Permission) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "tls.permission.redirhub",
+		ID:  "tls.permission.redirects",
 		New: func() caddy.Module { return new(Permission) },
 	}
 }

@@ -1,10 +1,10 @@
 ---
-title: redirhub (Caddyfile directive)
+title: redirects (Caddyfile directive)
 ---
 
-# redirhub
+# redirects
 
-Serves the redirects of a [RedirHub](https://www.redirhub.com) workspace ("Integration Mode"):
+Bulk redirects and 404 monitoring. Serves the redirects of a [RedirHub](https://www.redirhub.com) workspace ("Integration Mode"):
 redirects, branded short links, QR code links and website migration mappings managed outside
 Caddy, in the RedirHub dashboard, API or MCP server. Caddy downloads the workspace rules file
 every 60 seconds and serves the redirects itself; changes need no config edit or reload.
@@ -23,15 +23,15 @@ own `404`s, are reported to RedirHub in the background, in batches, without dela
 This directive is not standard; build Caddy with it:
 
 ```
-xcaddy build --with github.com/redirhub/caddy-redirhub
+xcaddy build --with github.com/redirhub/caddy-redirects
 ```
 
-Module: [`http.handlers.redirhub`](https://github.com/redirhub/caddy-redirhub)
+Module: [`http.handlers.redirects`](https://github.com/redirhub/caddy-redirects)
 
 ## Syntax
 
 ```caddy-d
-redirhub [<rules_url>] {
+redirects [<rules_url>] {
 	rules_url <url>
 	key       <integration_key>
 }
@@ -47,18 +47,18 @@ with the same `rules_url` share one download, across sites and config reloads.
 
 ## On-demand TLS
 
-The module also provides the `tls.permission.redirhub` permission module, which allows an
+The module also provides the `tls.permission.redirects` permission module, which allows an
 on-demand certificate only for hostnames listed in the RedirHub rules:
 
 ```caddy
 {
 	on_demand_tls {
-		permission redirhub [<rules_url>]
+		permission redirects [<rules_url>]
 	}
 }
 ```
 
-Without `rules_url`, a hostname listed in any rules file loaded by a `redirhub` handler is allowed.
+Without `rules_url`, a hostname listed in any rules file loaded by a `redirects` handler is allowed.
 
 ## Examples
 
@@ -68,7 +68,7 @@ every hostname in the rules:
 ```caddy
 {
 	on_demand_tls {
-		permission redirhub
+		permission redirects
 	}
 }
 
@@ -76,7 +76,7 @@ https:// {
 	tls {
 		on_demand
 	}
-	redirhub {
+	redirects {
 		rules_url https://rules.rediredge.com/abc123/TOKEN.txt
 		key {env.REDIRHUB_INTEGRATION_KEY}
 	}
@@ -88,7 +88,7 @@ Serve them on a static site; a missing file falls through to the host's catch-al
 
 ```caddy
 example.com {
-	redirhub https://rules.rediredge.com/abc123/TOKEN.txt {
+	redirects https://rules.rediredge.com/abc123/TOKEN.txt {
 		key {env.REDIRHUB_INTEGRATION_KEY}
 	}
 	root * /srv

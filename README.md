@@ -1,18 +1,28 @@
-# caddy-redirhub
+# caddy-redirects
 
-A [Caddy](https://caddyserver.com) v2 module for **RedirHub Integration Mode**: your domains keep
-pointing at your own Caddy server, and Caddy serves the redirects, branded short links, QR code
-links and website migration mappings you manage in the [RedirHub](https://www.redirhub.com)
-dashboard, API or MCP server. Changes are live within a minute, without editing a Caddyfile or
-reloading Caddy, and every redirect (and, if you want, every 404 of your site) shows up in
-RedirHub's analytics.
+**Bulk redirects and 404 monitoring for [Caddy](https://caddyserver.com) v2.** Your domains keep
+pointing at your own Caddy server; Caddy serves thousands of redirects from a remote rules file
+and reports every redirect and every 404 back, so broken links show up before your visitors find
+them.
+
+- Redirects, short links, QR code links and whole website migrations, live within a minute,
+  without editing a Caddyfile or reloading Caddy.
+- 404 monitoring: the site's own 404s that no rule redirected are reported in the background, in
+  batches, without delaying responses.
+- The last good copy of the rules is kept on disk, so a restart redirects at once even when the
+  rules server is out of reach.
+- On-demand HTTPS only for the hostnames in your rules.
+
+The rules file format is open ([below](#rules-file-format-v1)). [RedirHub](https://www.redirhub.com)
+publishes it for you ("Integration Mode"): you manage the redirects in its dashboard, API or MCP
+server and see the redirects and 404s in its analytics.
 
 The module adds two Caddy modules:
 
 | Module | What it does |
 | --- | --- |
-| `http.handlers.redirhub` | HTTP handler: answers the ownership check, serves redirects, reports hits |
-| `tls.permission.redirhub` | On-demand TLS permission: certificates only for hostnames in your rules |
+| `http.handlers.redirects` | HTTP handler: answers the ownership check, serves redirects, reports hits |
+| `tls.permission.redirects` | On-demand TLS permission: certificates only for hostnames in your rules |
 
 Caddy's own [`redir`](https://caddyserver.com/docs/caddyfile/directives/redir) and
 [`map`](https://caddyserver.com/docs/caddyfile/directives/map) remain the right tool for a few
@@ -24,15 +34,15 @@ migrations, and people who edit redirects without touching Caddy.
 Build Caddy with the module using [xcaddy](https://github.com/caddyserver/xcaddy):
 
 ```sh
-xcaddy build --with github.com/redirhub/caddy-redirhub
+xcaddy build --with github.com/redirhub/caddy-redirects
 ```
 
 Check that both modules are in the binary:
 
 ```sh
-./caddy list-modules | grep redirhub
-# http.handlers.redirhub
-# tls.permission.redirhub
+./caddy list-modules | grep redirects
+# http.handlers.redirects
+# tls.permission.redirects
 ```
 
 ## Get the rules address and the key
@@ -54,7 +64,7 @@ the dashboard checks every 15 minutes, or immediately with **Check now**.
 {
 	# Optional: on-demand certificates only for hostnames in your RedirHub rules.
 	on_demand_tls {
-		permission redirhub
+		permission redirects
 	}
 }
 
@@ -62,7 +72,7 @@ https:// {
 	tls {
 		on_demand
 	}
-	redirhub {
+	redirects {
 		rules_url https://rules.rediredge.com/abc123/TOKEN.txt
 		key {env.REDIRHUB_INTEGRATION_KEY}
 	}
@@ -73,7 +83,7 @@ https:// {
 Syntax:
 
 ```caddyfile
-redirhub [<rules_url>] {
+redirects [<rules_url>] {
 	rules_url <url>
 	key       <integration key>
 }
@@ -84,16 +94,16 @@ redirhub [<rules_url>] {
 
 The directive is ordered `before redir` automatically, so it runs before `redir` and the
 handlers that serve your site (`reverse_proxy`, `php_fastcgi`, `file_server`, …), and after
-`rewrite`, `uri` and `header`. You may still write `order redirhub before redir` (or another
+`rewrite`, `uri` and `header`. You may still write `order redirects before redir` (or another
 position) in the global options.
 
 The permission module:
 
 ```caddyfile
-permission redirhub [<rules_url>]
+permission redirects [<rules_url>]
 ```
 
-Without `rules_url` it allows a hostname listed in any rules file a `redirhub` handler of this
+Without `rules_url` it allows a hostname listed in any rules file a `redirects` handler of this
 Caddy instance has loaded; with it, only that file (which it polls itself if no handler does).
 
 The handler and the permission module share one poller per `rules_url`, however many sites and
@@ -112,7 +122,7 @@ handler instances use it, and it survives config reloads.
 						{
 							"handle": [
 								{
-									"handler": "redirhub",
+									"handler": "redirects",
 									"rules_url": "https://rules.rediredge.com/abc123/TOKEN.txt",
 									"key": "{env.REDIRHUB_INTEGRATION_KEY}"
 								},
@@ -130,7 +140,7 @@ handler instances use it, and it survives config reloads.
 			"automation": {
 				"policies": [{ "on_demand": true }],
 				"on_demand": {
-					"permission": { "module": "redirhub" }
+					"permission": { "module": "redirects" }
 				}
 			}
 		}
@@ -168,7 +178,7 @@ request path is appended to the target.
 `If-None-Match`, a 5 second timeout and no credentials. Any failure (network, 404, 5xx, a file
 that cannot be read) keeps the last good copy. Until the first good copy, nothing is redirected
 and the check path is not answered. The last good copy is saved in Caddy's data directory
-(`$XDG_DATA_HOME/caddy/redirhub/`), so a restart redirects immediately even when the rules
+(`$XDG_DATA_HOME/caddy/redirects/`), so a restart redirects immediately even when the rules
 server is unreachable.
 
 **Reporting.** Every redirect served (exact and catch-all), and for hostnames with
@@ -177,7 +187,7 @@ batched in memory and sent gzip-compressed every 5 seconds, or at 100 lines or 6
 second timeout. A failed or rejected report is dropped, never retried, and never blocks or slows
 a request; when the in-memory queue is full, lines are dropped. Other statuses are never reported.
 
-**On-demand TLS.** With `permission redirhub`, Caddy obtains a certificate only for hostnames
+**On-demand TLS.** With `permission redirects`, Caddy obtains a certificate only for hostnames
 listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
 them in the Caddyfile and without letting anyone else make Caddy request certificates.
 
@@ -248,7 +258,7 @@ key.
 ```sh
 go vet ./...
 go test -race ./...
-xcaddy build --with github.com/redirhub/caddy-redirhub=.
+xcaddy build --with github.com/redirhub/caddy-redirects=.
 ```
 
 ## License

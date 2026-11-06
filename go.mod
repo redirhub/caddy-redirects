@@ -1,4 +1,4 @@
-module github.com/redirhub/caddy-redirhub
+module github.com/redirhub/caddy-redirects
 
 go 1.26.0
 

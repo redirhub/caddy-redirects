@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redirhub
+package redirects
 
 import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -21,10 +21,10 @@ import (
 )
 
 func init() {
-	httpcaddyfile.RegisterHandlerDirective("redirhub", parseCaddyfile)
+	httpcaddyfile.RegisterHandlerDirective("redirects", parseCaddyfile)
 	// Exact redirects run before redir and the site's own routes, so no
 	// global `order` option is needed.
-	httpcaddyfile.RegisterDirectiveOrder("redirhub", httpcaddyfile.Before, "redir")
+	httpcaddyfile.RegisterDirectiveOrder("redirects", httpcaddyfile.Before, "redir")
 }
 
 func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
@@ -35,7 +35,7 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens:
 //
-//	redirhub [<rules_url>] {
+//	redirects [<rules_url>] {
 //		rules_url <url>
 //		key       <integration key>
 //	}
@@ -58,22 +58,22 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 		default:
-			return d.Errf("unrecognized redirhub option '%s'", d.Val())
+			return d.Errf("unrecognized redirects option '%s'", d.Val())
 		}
 	}
 	if h.RulesURL == "" {
-		return d.Err("redirhub: rules_url is required")
+		return d.Err("redirects: rules_url is required")
 	}
 	return nil
 }
 
 // UnmarshalCaddyfile sets up the permission module:
 //
-//	permission redirhub [<rules_url>]
+//	permission redirects [<rules_url>]
 //
 // or
 //
-//	permission redirhub {
+//	permission redirects {
 //		rules_url <url>
 //	}
 func (p *Permission) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -91,7 +91,7 @@ func (p *Permission) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				return d.ArgErr()
 			}
 		default:
-			return d.Errf("unrecognized redirhub permission option '%s'", d.Val())
+			return d.Errf("unrecognized redirects permission option '%s'", d.Val())
 		}
 	}
 	return nil

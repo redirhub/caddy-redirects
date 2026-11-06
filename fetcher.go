@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package redirhub
+package redirects
 
 import (
 	"bytes"
@@ -167,7 +167,7 @@ func (f *fetcher) fetchOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "caddy-redirhub/"+Version)
+	req.Header.Set("User-Agent", "caddy-redirects/"+Version)
 	if f.etag != "" && f.Rules() != nil {
 		req.Header.Set("If-None-Match", f.etag)
 	}
@@ -219,7 +219,7 @@ func (f *fetcher) fetchOnce(ctx context.Context) error {
 // directory, so a restart can redirect before the first download.
 func persistPath(url string) string {
 	sum := sha256.Sum256([]byte(url))
-	return filepath.Join(caddy.AppDataDir(), "redirhub", hex.EncodeToString(sum[:12])+".rules")
+	return filepath.Join(caddy.AppDataDir(), "redirects", hex.EncodeToString(sum[:12])+".rules")
 }
 
 // The persisted file is the raw ETag on the first line, then the body.

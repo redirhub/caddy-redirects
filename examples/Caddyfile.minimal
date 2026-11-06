@@ -1,5 +1,5 @@
 example.com {
-	redirhub {
+	redirects {
 		rules_url https://rules.rediredge.com/abc123/TOKEN.txt
 		key {env.REDIRHUB_INTEGRATION_KEY}
 	}

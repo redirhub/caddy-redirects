@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package redirhub is a Caddy module for RedirHub Integration Mode: it
-// serves the redirects of a RedirHub workspace from Caddy itself, answers
-// the ownership check path, reports redirects and 404s back to RedirHub,
-// and can gate on-demand TLS to the workspace's hostnames.
-package redirhub
+// Package redirects is a Caddy module for bulk redirects and 404 monitoring:
+// it serves the redirects of a remote rules file (format v1, published by
+// RedirHub Integration Mode), answers the ownership check path, reports
+// redirects and 404s back, and can gate on-demand TLS to the listed hostnames.
+package redirects
 
 import (
 	"bytes"
@@ -66,7 +66,7 @@ type Handler struct {
 // CaddyModule returns the Caddy module information.
 func (Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.redirhub",
+		ID:  "http.handlers.redirects",
 		New: func() caddy.Module { return new(Handler) },
 	}
 }
