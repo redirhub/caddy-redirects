@@ -165,63 +165,41 @@ handler instances use it, and it survives config reloads.
 
 ## Behaviour
 
-Only **GET and HEAD** requests on a **hostname listed** in the rules are redirected or answered;
-everything else goes to the rest of the route unchanged. With `report_404 all`, the 404 answers of
-unlisted hostnames are reported too, but their responses are not changed.
+The module follows [format v1](https://github.com/redirhub/integration-spec): for **GET and HEAD**
+on a **hostname listed** in the rules it answers the check path (`/_redirhub/check`), redirects
+exact rules **before** your site's own routes, and redirects to the hostname's catch-all
+(`{host}/*`) only where your site answers **404**; everything else goes to the rest of the route
+unchanged. The specification has the matching rules, the check answer and the report lines. What
+is particular to Caddy:
 
-1. **Check path** (`/_redirhub/check`): answered with `200`, `text/plain`, `Cache-Control:
-   no-store` and `token=<check token> etag=<ETag of the rules in use>`. This proves the hostname
-   is yours and tells RedirHub whether Caddy has the latest rules.
-2. **Exact rules** (a source hostname and path) redirect **before** your site's own routes, even
-   when the page still exists.
-3. Otherwise your site answers. Only when it answers **404** and the hostname has a **catch-all
-   rule** (`{host}/*`), the 404 is discarded and Caddy redirects instead. A working site
-   is never taken over. A 404 that a handler returns as an error (e.g. `file_server`) counts too.
-   Unlike a domain connected to RedirHub by DNS, where the catch-all takes the whole domain, the
-   home page `/` and every other page your site serves stay with your site; to send them away
-   too, add an exact rule for each (e.g. `{host}/`).
-   Responses other than 404 stream through without buffering, and a 404 the catch-all replaces is
-   discarded as it is written, never held in memory.
-
-Matching uses the request's hostname (any letter case, port ignored) and path (case-sensitive,
-compared percent-decoded, leading and trailing slashes ignored as on RedirHub's edge: `/old/` and
-`//old` match the rule `{host}/old`); the scheme and query string are ignored. Without the `q` flag the
-query string is dropped from the target; with `q` it is kept; with `p` (catch-all only) the
-request path is appended to the target.
-
-**Push, with polling as the fallback.** When the rules file has a `@notify` line, Caddy keeps one
-[Mercure](https://mercure.rocks) subscription (server-sent events) open per `rules_url` and
-downloads the rules at once when a message arrives, so a change is served within a second or two.
-The message is only a wake-up: nothing in it is trusted, Caddy downloads the file as on every
-poll. Every new connection, the first and each reconnect, also downloads once (a change may have
-come while it was closed). While the subscription is connected and healthy (the hub's heartbeat
-arrives at least once a minute), Caddy polls only **once an hour**; the moment it drops, it polls
-every `@refresh` seconds again and reconnects after 1 second, doubling up to 30 seconds (back to 1
-second after a connection that lasted over a minute), resuming with `Last-Event-ID`. The hub's
-token is never logged, nor the topic, which names the rules file. Without `@notify`, Caddy polls
-every `@refresh` seconds, as before.
-
-**Fail open.** The rules are downloaded every 60 seconds (or the file's `@refresh`), with
-`If-None-Match`, a 5 second timeout and no credentials. Any failure (network, 404, 5xx, a file
-that cannot be read) keeps the last good copy. Until the first good copy, nothing is redirected
-and the check path is not answered. The last good copy is saved in Caddy's data directory
-(`$XDG_DATA_HOME/caddy/redirects/`), so a restart redirects immediately even when the rules
-server is unreachable.
-
-**Reporting.** Every redirect served (exact and catch-all), and for hostnames with
-`report404` (every hostname with `report_404 all`) the site's own 404s that no rule redirected,
-are reported to RedirHub. Lines are
-batched in memory and sent gzip-compressed every 5 seconds, or at 100 lines or 64 KB, with a 2
-second timeout. A failed or rejected report is dropped, never retried, and never blocks or slows
-a request; when the in-memory queue is full, lines are dropped. Other statuses are never reported.
-
-**X-Powered-By.** With a `@powered-by` line, every redirect from the rules (exact and catch-all)
-carries `X-Powered-By: <its value>`; the check path, the site's own answers and its 404s do not.
-Without the line, no header is set.
-
-**On-demand TLS.** With `permission redirects`, Caddy obtains a certificate only for hostnames
-listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
-them in the Caddyfile and without letting anyone else make Caddy request certificates.
+- **The catch-all and your site.** A 404 that a handler returns as an error (e.g. `file_server`)
+  counts too. Responses other than 404 stream through without buffering, and a 404 the catch-all
+  replaces is discarded as it is written, never held in memory. Unlike a domain connected to
+  RedirHub by DNS, where the catch-all takes the whole domain, the home page `/` and every other
+  page your site serves stay with your site; to send them away too, add an exact rule for each
+  (e.g. `{host}/`).
+- **`report_404 all`.** The 404 answers of hostnames that are not in the rules are reported too;
+  their responses are not changed.
+- **Push, with polling as the fallback.** When the rules file has a `@notify` line, Caddy keeps
+  one [Mercure](https://mercure.rocks) subscription (server-sent events) open per `rules_url` and
+  downloads the rules at once when a message arrives, so a change is served within a second or
+  two. The message is only a wake-up: nothing in it is trusted, Caddy downloads the file as on
+  every poll. Every new connection, the first and each reconnect, also downloads once (a change
+  may have come while it was closed). While the subscription is connected and healthy (the hub's
+  heartbeat arrives at least once a minute), Caddy polls only **once an hour**; the moment it
+  drops, it polls every `@refresh` seconds again and reconnects after 1 second, doubling up to 30
+  seconds (back to 1 second after a connection that lasted over a minute), resuming with
+  `Last-Event-ID`. The hub's token is never logged, nor the topic, which names the rules file.
+  Without `@notify`, Caddy polls every `@refresh` seconds.
+- **The last good copy is kept on disk**, in Caddy's data directory
+  (`$XDG_DATA_HOME/caddy/redirects/`), so a restart redirects immediately even when the rules
+  server is unreachable. Any failed download keeps it in use.
+- **Reports** are batched in memory and sent every 5 seconds, or at 100 lines or 64 KB. A failed
+  or rejected report is dropped, never retried, and never blocks or slows a request; when the
+  in-memory queue is full, lines are dropped.
+- **On-demand TLS.** With `permission redirects`, Caddy obtains a certificate only for hostnames
+  listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
+  them in the Caddyfile and without letting anyone else make Caddy request certificates.
 
 ## Rules file format
 
