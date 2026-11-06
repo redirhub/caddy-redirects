@@ -18,7 +18,7 @@ func TestReportLineFormat(t *testing.T) {
 	serve(t, env.h, &site{}, r)
 
 	lines := env.hits.waitLines(t, 1)
-	want := `203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://google.example/" "Mozilla/5.0 \"quoted\" \\slash" source=promo.example.com/old-pricing destination=https://promo.example.com/pricing`
+	want := `203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://google.example/" "Mozilla/5.0 \"quoted\" \\slash" file=promo.example.com/old-pricing destination=https://promo.example.com/pricing`
 	if lines[0] != want {
 		t.Errorf("line\n got %s\nwant %s", lines[0], want)
 	}
@@ -61,10 +61,10 @@ func TestReportCatchAllAnd404(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("lines = %q", lines)
 	}
-	if !strings.HasSuffix(lines[0], `"GET https://shop.example.com/missing HTTP/1.1" 301 0 "-" "-" source=shop.example.com/* destination=https://www.example.net/missing`) {
+	if !strings.HasSuffix(lines[0], `"GET https://shop.example.com/missing HTTP/1.1" 301 0 "-" "-" file=shop.example.com/* destination=https://www.example.net/missing`) {
 		t.Errorf("catch-all line = %s", lines[0])
 	}
-	if !strings.Contains(lines[1], `"GET https://promo.example.com/missing HTTP/1.1" 404 13`) || strings.Contains(lines[1], "source=") || strings.Contains(lines[1], "destination=") {
+	if !strings.Contains(lines[1], `"GET https://promo.example.com/missing HTTP/1.1" 404 13`) || strings.Contains(lines[1], "file=") || strings.Contains(lines[1], "destination=") {
 		t.Errorf("404 line = %s", lines[1])
 	}
 }
@@ -72,10 +72,10 @@ func TestReportCatchAllAnd404(t *testing.T) {
 func TestReportLineFieldsArePercentEncoded(t *testing.T) {
 	r := request("GET", "https://a.example.com/x")
 	got := hitLine(r, "a.example.com", 302, 0, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), "a.example.com/x", "https://b.example.com/a b\"c\\d")
-	if !strings.HasSuffix(got, ` source=a.example.com/x destination=https://b.example.com/a%20b%22c%5Cd`) {
+	if !strings.HasSuffix(got, ` file=a.example.com/x destination=https://b.example.com/a%20b%22c%5Cd`) {
 		t.Errorf("got %s", got)
 	}
-	if got := hitLine(r, "a.example.com", 302, 0, time.Now(), "a.example.com/x", ""); !strings.HasSuffix(got, " source=a.example.com/x destination=-") {
+	if got := hitLine(r, "a.example.com", 302, 0, time.Now(), "a.example.com/x", ""); !strings.HasSuffix(got, " file=a.example.com/x destination=-") {
 		t.Errorf("got %s", got)
 	}
 }
@@ -105,7 +105,7 @@ func TestReport404All(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("lines = %q", lines)
 	}
-	if !strings.Contains(lines[0], `301 0 "-" "-" source=shop.example.com/* destination=https://www.example.net/missing`) {
+	if !strings.Contains(lines[0], `301 0 "-" "-" file=shop.example.com/* destination=https://www.example.net/missing`) {
 		t.Errorf("catch-all line = %s", lines[0])
 	}
 	if !strings.HasSuffix(lines[1], `"GET https://unlisted.example.com/missing?q=1 HTTP/1.1" 404 13 "-" "-"`) {

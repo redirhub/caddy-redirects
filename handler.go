@@ -33,7 +33,7 @@ import (
 )
 
 // Version is sent in the User-Agent of rules downloads and reports.
-const Version = "0.3.0"
+const Version = "0.3.1"
 
 func init() {
 	caddy.RegisterModule(Handler{})

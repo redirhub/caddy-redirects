@@ -261,9 +261,9 @@ shop.example.com/*	https://www.example.net/	301	pq
   - **options**: space-separated `key=value`, may be ignored; further columns are ignored.
 - A line that cannot be parsed is skipped; the first rule for a source wins.
 - **Reports** (to `@hits`, `Authorization: Bearer <key>`): one Apache combined line with the
-  absolute URL per redirect or 404. A redirect appends `source=<the rule's source column,
+  absolute URL per redirect or 404. A redirect appends `file=<the rule's source column,
   verbatim>` and `destination=<the Location sent>` (spaces, `"` and `\` percent-encoded); a 404
-  appends nothing. RedirHub takes the link from the source and counts the line for the key's
+  appends nothing. RedirHub takes the link from `file=` and counts the line for the key's
   workspace.
 
 ## Privacy
@@ -271,7 +271,7 @@ shop.example.com/*	https://www.example.net/	301	pq
 Each report line is the Apache combined log format with the absolute URL:
 
 ```
-203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://www.google.com/" "Mozilla/5.0 …" source=promo.example.com/old-pricing destination=https://promo.example.com/pricing
+203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://www.google.com/" "Mozilla/5.0 …" file=promo.example.com/old-pricing destination=https://promo.example.com/pricing
 ```
 
 That is: the visitor's IP address (Caddy's client IP, which honours `trusted_proxies`), the

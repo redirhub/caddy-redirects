@@ -22,7 +22,9 @@ For `GET` and `HEAD` requests on a hostname listed in the rules:
 
 All other requests pass through unchanged. If the rules cannot be downloaded, the last good copy
 stays in use; before the first copy, nothing is redirected. Redirects, and optionally the site's
-own `404`s, are reported to RedirHub in the background, in batches, without delaying responses.
+own `404`s, are reported to RedirHub in the background, in batches, without delaying responses;
+a redirect's report names the rule applied (`file=`, the rule's source column, verbatim) and the
+`Location` sent.
 
 This directive is not standard; build Caddy with it:
 
