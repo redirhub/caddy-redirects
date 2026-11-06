@@ -223,10 +223,10 @@ The module reads a plain-text workspace rules file:
 ```
 @format 1
 @refresh 60
+@notify https://service.redirhub.com/.well-known/mercure?topic=integration%2F<file token> token=<jwt>
 @hits https://rediredge.com/_edge/hits
 @check /_redirhub/check
 @powered-by RedirHub (integrated)
-@notify https://service.redirhub.com/.well-known/mercure?topic=integration%2F<file token> token=<jwt>
 @host promo.example.com check=EEEXQ4RS report404
 @host shop.example.com check=K3Vb9QmX
 promo.example.com/old-pricing	https://promo.example.com/pricing
