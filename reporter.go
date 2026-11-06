@@ -240,10 +240,11 @@ func (r *reporter) dropped(lines int, field zap.Field) {
 	r.logger.Warn("hit reports dropped", zap.Int("lines", n), field)
 }
 
-// hitLine formats one Apache combined line with the absolute URL:
+// hitLine formats one Apache combined line with the absolute URL; a
+// redirect adds the source of the rule applied and the Location sent:
 //
-//	203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://host/path?q HTTP/1.1" 301 0 "referer" "agent"
-func hitLine(req *http.Request, host string, status, size int, now time.Time) string {
+//	203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://host/path?q HTTP/1.1" 301 0 "referer" "agent" source=host/path destination=https://...
+func hitLine(req *http.Request, host string, status, size int, now time.Time, source, location string) string {
 	scheme := "http"
 	if req.TLS != nil {
 		scheme = "https"
@@ -268,6 +269,36 @@ func hitLine(req *http.Request, host string, status, size int, now time.Time) st
 	b.WriteString(`" "`)
 	b.WriteString(orDash(escape(req.UserAgent())))
 	b.WriteByte('"')
+	if source != "" {
+		b.WriteString(" source=")
+		b.WriteString(fieldValue(source))
+		b.WriteString(" destination=")
+		b.WriteString(orDash(fieldValue(location)))
+	}
+	return b.String()
+}
+
+// fieldValue percent-encodes what cannot stand in a key=value field of
+// the line: spaces, quotes, backslashes and control bytes.
+func fieldValue(s string) string {
+	clean := true
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c <= ' ' || c == '"' || c == '\\' || c == 0x7f {
+			clean = false
+			break
+		}
+	}
+	if clean {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c <= ' ' || c == '"' || c == '\\' || c == 0x7f {
+			fmt.Fprintf(&b, "%%%02X", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
 	return b.String()
 }
 

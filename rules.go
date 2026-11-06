@@ -67,12 +67,15 @@ type Host struct {
 	Report404 bool
 	// Exact maps a decoded request path to its rule.
 	Exact map[string]Rule
-	// CatchAll is the https://{host}/* rule, or nil.
+	// CatchAll is the {host}/* rule, or nil.
 	CatchAll *Rule
 }
 
 // Rule is one redirect.
 type Rule struct {
+	// Source is the rule's source column as written, reported back with
+	// each redirect it serves.
+	Source     string
 	Target     string
 	Status     int
 	AppendPath bool
@@ -200,7 +203,8 @@ func (rs *RuleSet) parseDirective(f []string) error {
 }
 
 // parseRuleLine parses
-// source<TAB>target[<TAB>status[<TAB>flags[<TAB>options]]].
+// source<TAB>target[<TAB>status[<TAB>flags[<TAB>options]]], the source
+// a hostname and path without a scheme (host/path, host/* the catch-all).
 // Flags are must-understand: an unknown letter skips the rule. Options
 // (space-separated key=value) and any further columns are ignored.
 func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok bool) {
@@ -208,7 +212,8 @@ func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok
 	if len(f) < 2 {
 		return "", "", false, Rule{}, false
 	}
-	host, rawPath, ok := splitSource(strings.TrimSpace(f[0]))
+	source := strings.TrimSpace(f[0])
+	host, rawPath, ok := splitSource(source)
 	if !ok {
 		return "", "", false, Rule{}, false
 	}
@@ -217,7 +222,7 @@ func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return "", "", false, Rule{}, false
 	}
-	rule = Rule{Target: target, Status: http.StatusMovedPermanently}
+	rule = Rule{Source: source, Target: target, Status: http.StatusMovedPermanently}
 	if len(f) >= 3 && strings.TrimSpace(f[2]) != "" {
 		code, err := strconv.Atoi(strings.TrimSpace(f[2]))
 		if err != nil {
@@ -248,24 +253,21 @@ func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok
 	return host, decodePath(rawPath), false, rule, true
 }
 
-// splitSource splits https://host/path?query into host and path. The
-// scheme and query are ignored.
+// splitSource splits host/path?query into host and path; the query is
+// ignored. A source with a scheme, or without a path, is not a rule.
 func splitSource(src string) (host, path string, ok bool) {
-	rest, found := strings.CutPrefix(src, "https://")
-	if !found {
-		rest, found = strings.CutPrefix(src, "http://")
-		if !found {
-			return "", "", false
-		}
+	if strings.Contains(src, "://") || strings.ContainsAny(src, " \"\\") {
+		return "", "", false
 	}
+	rest := src
 	if i := strings.IndexAny(rest, "?#"); i >= 0 {
 		rest = rest[:i]
 	}
-	host, path = rest, "/"
-	if i := strings.IndexByte(rest, '/'); i >= 0 {
-		host, path = rest[:i], rest[i:]
+	i := strings.IndexByte(rest, '/')
+	if i < 0 {
+		return "", "", false
 	}
-	host = normalizeHost(host)
+	host, path = normalizeHost(rest[:i]), rest[i:]
 	if host == "" {
 		return "", "", false
 	}

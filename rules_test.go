@@ -41,19 +41,22 @@ func TestParseRules(t *testing.T) {
 		"@host Promo.Example.com check=EEEXQ4RS future=yes report404\n" +
 		"@host shop.example.com check=K3Vb9QmX\n" +
 		"@host\n" +
-		"https://promo.example.com/old-pricing\thttps://promo.example.com/pricing\r\n" +
-		"https://promo.example.com/promo\thttps://sale.example.com/\t302\n" +
-		"https://promo.example.com/promo\thttps://ignored.example.com/\t307\n" + // duplicate: first wins
-		"https://promo.example.com/bad-status\thttps://x.example.com/\t200\n" +
-		"https://promo.example.com/relative\t/pricing\n" +
+		"promo.example.com/old-pricing\thttps://promo.example.com/pricing\r\n" +
+		"promo.example.com/promo\thttps://sale.example.com/\t302\n" +
+		"promo.example.com/promo\thttps://ignored.example.com/\t307\n" + // duplicate: first wins
+		"promo.example.com/bad-status\thttps://x.example.com/\t200\n" +
+		"promo.example.com/relative\t/pricing\n" +
 		"not a rule\n" +
 		"https://promo.example.com/no-target\n" +
-		"https://unlisted.example.com/a\thttps://x.example.com/\n" +
-		"https://shop.example.com/*\thttps://www.example.net/\t301\tpq\n" +
-		"https://shop.example.com/caf%C3%A9?x=1\thttps://www.example.net/cafe\t308\tq\n" +
-		"https://shop.example.com/empty-flags\thttps://www.example.net/e\t302\t\tweight=3 future=x\textra column\n" +
-		"https://shop.example.com/unknown-flag\thttps://www.example.net/u\t301\tpz\n" +
-		"https://shop.example.com/no-status\thttps://www.example.net/n\t\tq\n" +
+		"https://promo.example.com/with-scheme\thttps://x.example.com/\n" + // sources have no scheme
+		"promo.example.com\thttps://x.example.com/\n" + // no path
+		"promo.example.com/a b\thttps://x.example.com/\n" + // a space would break the report
+		"unlisted.example.com/a\thttps://x.example.com/\n" +
+		"shop.example.com/*\thttps://www.example.net/\t301\tpq\n" +
+		"shop.example.com/caf%C3%A9?x=1\thttps://www.example.net/cafe\t308\tq\n" +
+		"shop.example.com/empty-flags\thttps://www.example.net/e\t302\t\tweight=3 future=x\textra column\n" +
+		"shop.example.com/unknown-flag\thttps://www.example.net/u\t301\tpz\n" +
+		"shop.example.com/no-status\thttps://www.example.net/n\t\tq\n" +
 		"\n"
 	rs, err := ParseRules([]byte(body), `W/"abc123"`)
 	if err != nil {
@@ -82,7 +85,7 @@ func TestParseRules(t *testing.T) {
 	if len(promo.Exact) != 2 || promo.CatchAll != nil {
 		t.Errorf("promo rules = %+v catch-all %v", promo.Exact, promo.CatchAll)
 	}
-	if r := promo.Exact["/old-pricing"]; r.Status != 301 || r.Target != "https://promo.example.com/pricing" {
+	if r := promo.Exact["/old-pricing"]; r.Status != 301 || r.Target != "https://promo.example.com/pricing" || r.Source != "promo.example.com/old-pricing" {
 		t.Errorf("old-pricing = %+v", r)
 	}
 	if r := promo.Exact["/promo"]; r.Status != 302 || r.Target != "https://sale.example.com/" {
@@ -92,10 +95,10 @@ func TestParseRules(t *testing.T) {
 	if shop == nil || shop.Token != "K3Vb9QmX" || shop.Report404 {
 		t.Fatalf("shop = %+v", shop)
 	}
-	if shop.CatchAll == nil || !shop.CatchAll.AppendPath || !shop.CatchAll.KeepQuery || shop.CatchAll.Status != 301 {
+	if shop.CatchAll == nil || !shop.CatchAll.AppendPath || !shop.CatchAll.KeepQuery || shop.CatchAll.Status != 301 || shop.CatchAll.Source != "shop.example.com/*" {
 		t.Errorf("catch-all = %+v", shop.CatchAll)
 	}
-	if r, ok := shop.Exact["/café"]; !ok || r.Status != 308 || !r.KeepQuery {
+	if r, ok := shop.Exact["/café"]; !ok || r.Status != 308 || !r.KeepQuery || r.Source != "shop.example.com/caf%C3%A9?x=1" {
 		t.Errorf("decoded exact rule = %+v %v", r, ok)
 	}
 	if r, ok := shop.Exact["/empty-flags"]; !ok || r.Status != 302 || r.KeepQuery || r.AppendPath {

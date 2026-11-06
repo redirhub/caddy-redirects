@@ -17,6 +17,9 @@ https:// {
 	redirects {
 		rules_url https://rules.rediredge.com/abc123/TOKEN.txt
 		key {env.REDIRHUB_INTEGRATION_KEY}
+		# Optional: report the 404s of every hostname, not only those
+		# with 404 reporting on in RedirHub.
+		report_404 all
 	}
 
 	reverse_proxy localhost:8080

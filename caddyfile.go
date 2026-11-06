@@ -36,8 +36,9 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 // UnmarshalCaddyfile sets up the handler from Caddyfile tokens:
 //
 //	redirects [<rules_url>] {
-//		rules_url <url>
-//		key       <integration key>
+//		rules_url  <url>
+//		key        <integration key>
+//		report_404 rules|all
 //	}
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	d.Next() // directive name
@@ -56,6 +57,13 @@ func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 		case "key":
 			if !d.AllArgs(&h.Key) {
 				return d.ArgErr()
+			}
+		case "report_404":
+			if !d.AllArgs(&h.Report404) {
+				return d.ArgErr()
+			}
+			if h.Report404 != Report404Rules && h.Report404 != Report404All {
+				return d.Errf("report_404 must be '%s' or '%s'", Report404Rules, Report404All)
 			}
 		default:
 			return d.Errf("unrecognized redirects option '%s'", d.Val())

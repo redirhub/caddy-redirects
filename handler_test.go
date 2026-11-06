@@ -114,7 +114,7 @@ func TestCheckPath(t *testing.T) {
 }
 
 func TestCheckPathBeforeExactRule(t *testing.T) {
-	env := newTestEnv(t, "@host a.example.com check=TOK\n@check /_redirhub/check\nhttps://a.example.com/_redirhub/check\thttps://x.example.com/\n")
+	env := newTestEnv(t, "@host a.example.com check=TOK\n@check /_redirhub/check\na.example.com/_redirhub/check\thttps://x.example.com/\n")
 	w := serve(t, env.h, &site{}, request("GET", "https://a.example.com/_redirhub/check"))
 	if w.Code != 200 || w.Body.String() != "token=TOK etag=etag-1" {
 		t.Fatalf("got %d %q", w.Code, w.Body.String())
@@ -183,6 +183,15 @@ func TestSiteErrorPassesThrough(t *testing.T) {
 	}
 }
 
+func TestValidateReport404(t *testing.T) {
+	for value, ok := range map[string]bool{"": true, "rules": true, "all": true, "none": false} {
+		h := Handler{rulesURL: "https://rules.example.test/x.txt", Report404: value}
+		if err := h.Validate(); (err == nil) != ok {
+			t.Errorf("report_404 %q: %v", value, err)
+		}
+	}
+}
+
 func TestUnmarshalCaddyfile(t *testing.T) {
 	d := caddyfile.NewTestDispenser(`redirects {
 		rules_url https://rules.example.test/abc/TOKEN.txt
@@ -202,7 +211,13 @@ func TestUnmarshalCaddyfile(t *testing.T) {
 		t.Errorf("inline form: %v %+v", err, h)
 	}
 
-	for _, bad := range []string{`redirects`, `redirects { key k }`, `redirects { bogus 1 }`, `redirects a b`, "redirects {\n rules_url\n}", "redirects {\n rules_url a b\n}"} {
+	d = caddyfile.NewTestDispenser("redirects https://rules.example.test/x.txt {\n report_404 all\n}")
+	h = Handler{}
+	if err := h.UnmarshalCaddyfile(d); err != nil || h.Report404 != Report404All {
+		t.Errorf("report_404 all: %v %+v", err, h)
+	}
+
+	for _, bad := range []string{`redirects`, `redirects { key k }`, `redirects { bogus 1 }`, "redirects x {\n report_404 some\n}", "redirects x {\n report_404\n}", `redirects a b`, "redirects {\n rules_url\n}", "redirects {\n rules_url a b\n}"} {
 		h = Handler{}
 		if err := h.UnmarshalCaddyfile(caddyfile.NewTestDispenser(bad)); err == nil {
 			t.Errorf("%q: expected an error", bad)

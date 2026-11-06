@@ -84,13 +84,20 @@ Syntax:
 
 ```caddyfile
 redirects [<rules_url>] {
-	rules_url <url>
-	key       <integration key>
+	rules_url  <url>
+	key        <integration key>
+	report_404 rules|all
 }
 ```
 
-- **rules_url** (required): the Workspace rules address.
+- **rules_url** (required): the Workspace rules address. It also says where reports go (`@hits`),
+  so it stays required even when you only want 404 monitoring.
 - **key**: the integration key. Without it, redirects work but nothing is reported.
+- **report_404**: which 404 answers of your site are reported. `rules` (the default) follows the
+  dashboard's **Report 404 pages** switch of each hostname in the rules (`report404`). `all`
+  reports every 404 of every hostname this site block serves, listed in the rules or not, so you
+  can monitor 404s without adding each domain to RedirHub first. Hostnames that are not in the
+  rules get nothing else: no redirects, no check path.
 
 The directive is ordered `before redir` automatically, so it runs before `redir` and the
 handlers that serve your site (`reverse_proxy`, `php_fastcgi`, `file_server`, …), and after
@@ -148,7 +155,7 @@ handler instances use it, and it survives config reloads.
 }
 ```
 
-`rules_url` and `key` accept Caddy placeholders such as `{env.NAME}`. Full examples are in
+`report_404` is `"rules"` (default) or `"all"`. `rules_url` and `key` accept Caddy placeholders such as `{env.NAME}`. Full examples are in
 [`examples/`](examples).
 
 ## Behaviour
@@ -159,14 +166,14 @@ goes to the rest of the route unchanged.
 1. **Check path** (`/_redirhub/check`): answered with `200`, `text/plain`, `Cache-Control:
    no-store` and `token=<check token> etag=<ETag of the rules in use>`. This proves the hostname
    is yours and tells RedirHub whether Caddy has the latest rules.
-2. **Exact rules** (a full source URL) redirect **before** your site's own routes, even when the
-   page still exists.
+2. **Exact rules** (a source hostname and path) redirect **before** your site's own routes, even
+   when the page still exists.
 3. Otherwise your site answers. Only when it answers **404** and the hostname has a **catch-all
-   rule** (`https://{host}/*`), the 404 is discarded and Caddy redirects instead. A working site
+   rule** (`{host}/*`), the 404 is discarded and Caddy redirects instead. A working site
    is never taken over. A 404 that a handler returns as an error (e.g. `file_server`) counts too.
    Unlike a domain connected to RedirHub by DNS, where the catch-all takes the whole domain, the
    home page `/` and every other page your site serves stay with your site; to send them away
-   too, add an exact rule for each (e.g. `https://{host}/`).
+   too, add an exact rule for each (e.g. `{host}/`).
    Responses other than 404 stream through without buffering.
 
 Matching uses the request's hostname (any letter case, port ignored) and path (case-sensitive,
@@ -182,7 +189,8 @@ and the check path is not answered. The last good copy is saved in Caddy's data 
 server is unreachable.
 
 **Reporting.** Every redirect served (exact and catch-all), and for hostnames with
-`report404` the site's own 404s that no rule redirected, are reported to RedirHub. Lines are
+`report404` (every hostname with `report_404 all`) the site's own 404s that no rule redirected,
+are reported to RedirHub. Lines are
 batched in memory and sent gzip-compressed every 5 seconds, or at 100 lines or 64 KB, with a 2
 second timeout. A failed or rejected report is dropped, never retried, and never blocks or slows
 a request; when the in-memory queue is full, lines are dropped. Other statuses are never reported.
@@ -202,9 +210,9 @@ The module reads a plain-text workspace rules file:
 @check /_redirhub/check
 @host promo.example.com check=EEEXQ4RS report404
 @host shop.example.com check=K3Vb9QmX
-https://promo.example.com/old-pricing	https://promo.example.com/pricing
-https://promo.example.com/promo	https://sale.example.com/	302
-https://shop.example.com/*	https://www.example.net/	301	pq
+promo.example.com/old-pricing	https://promo.example.com/pricing
+promo.example.com/promo	https://sale.example.com/	302
+shop.example.com/*	https://www.example.net/	301	pq
 ```
 
 - `@format 1`: the first line. A file whose major version is not 1 counts as a failed download:
@@ -214,11 +222,13 @@ https://shop.example.com/*	https://www.example.net/	301	pq
 - `@check <path>`: the check path (default `/_redirhub/check`).
 - `@host <hostname> check=<token> [report404]`: one per served hostname. Unknown `key=value`
   fields are ignored.
-- Unknown `@` directives are ignored.
+- Unknown `@` directives are ignored. Every other non-empty line is a rule.
 - A rule line has tab-separated columns:
   `source<TAB>target[<TAB>status[<TAB>flags[<TAB>options]]]`.
-  - **source**: a full URL `https://{host}/path`; `https://{host}/*` is the host's catch-all.
-    Rules for hostnames without an `@host` line are ignored.
+  - **source**: hostname and path without a scheme, `{host}/path` (percent-encoded where
+    needed); `{host}/*` is the host's catch-all. It matches `http` and `https` requests alike.
+    Rules for hostnames without an `@host` line are ignored, and so is a source with a scheme,
+    without a path, or with a space, `"` or `\`.
   - **target**: an absolute URL, used as is.
   - **status**: 301, 302, 307 or 308; empty means 301.
   - **flags** (may be empty): `p` appends the request path (catch-all only, no double slash),
@@ -226,20 +236,27 @@ https://shop.example.com/*	https://www.example.net/	301	pq
     unknown flag letter is skipped.
   - **options**: space-separated `key=value`, may be ignored; further columns are ignored.
 - A line that cannot be parsed is skipped; the first rule for a source wins.
+- **Reports** (to `@hits`, `Authorization: Bearer <key>`): one Apache combined line with the
+  absolute URL per redirect or 404. A redirect appends `source=<the rule's source column,
+  verbatim>` and `destination=<the Location sent>` (spaces, `"` and `\` percent-encoded); a 404
+  appends nothing. RedirHub takes the link from the source and counts the line for the key's
+  workspace.
 
 ## Privacy
 
 Each report line is the Apache combined log format with the absolute URL:
 
 ```
-203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://www.google.com/" "Mozilla/5.0 …"
+203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://www.google.com/" "Mozilla/5.0 …" source=promo.example.com/old-pricing destination=https://promo.example.com/pricing
 ```
 
 That is: the visitor's IP address (Caddy's client IP, which honours `trusted_proxies`), the
 time (UTC), the method, the requested URL with its query string, the protocol, the status, the
-response size, the `Referer` and the `User-Agent`. No cookies, other headers, request bodies or
+response size, the `Referer` and the `User-Agent`; for a redirect also the rule's source and the
+`Location` sent. No cookies, other headers, request bodies or
 response bodies are sent. Only redirects, and 404s of hostnames with 404 reporting turned on
-(the **Report 404 pages** switch in the dashboard), are reported; all other traffic stays on your
+(the **Report 404 pages** switch in the dashboard, or every hostname with `report_404 all`), are
+reported; all other traffic stays on your
 server. Requests are sent only to the `@hits` address in your rules file, with your integration
 key.
 

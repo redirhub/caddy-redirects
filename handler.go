@@ -33,7 +33,7 @@ import (
 )
 
 // Version is sent in the User-Agent of rules downloads and reports.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 func init() {
 	caddy.RegisterModule(Handler{})
@@ -43,7 +43,7 @@ func init() {
 // Handler serves the redirects of a RedirHub workspace rules file.
 //
 // For GET and HEAD requests on a hostname listed in the rules file it
-// answers the check path, redirects exact source URLs before the rest of
+// answers the check path, redirects exact sources (host/path) before the rest of
 // the route runs and, when the site itself answers 404, redirects to the
 // host's catch-all rule. Every other request passes through untouched.
 type Handler struct {
@@ -54,6 +54,11 @@ type Handler struct {
 	// The workspace integration key, used only to report redirects and
 	// 404s. Without it nothing is reported.
 	Key string `json:"key,omitempty"`
+
+	// Which 404 answers of the site are reported: "rules" (default) for
+	// the hostnames whose @host line has report404, "all" for every
+	// hostname this handler serves, listed in the rules or not.
+	Report404 string `json:"report_404,omitempty"`
 
 	rulesURL string
 	key      string
@@ -99,8 +104,19 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 
 // Validate checks the configuration.
 func (h *Handler) Validate() error {
+	switch h.Report404 {
+	case "", Report404Rules, Report404All:
+	default:
+		return fmt.Errorf("report_404 must be %q or %q, not %q", Report404Rules, Report404All, h.Report404)
+	}
 	return validateRulesURL(h.rulesURL)
 }
+
+// The values of report_404.
+const (
+	Report404Rules = "rules"
+	Report404All   = "all"
+)
 
 func validateRulesURL(raw string) error {
 	if raw == "" {
@@ -137,11 +153,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		rs = h.rules.Rules()
 	}
 	host := rs.Host(r.Host)
-	if host == nil {
-		return next.ServeHTTP(w, r)
+	listed := host != nil
+	if !listed {
+		if h.Report404 != Report404All || rs == nil {
+			return next.ServeHTTP(w, r)
+		}
+		// report_404 all: an unlisted hostname has no rules and no check
+		// path; only its 404s are reported.
+		host = &Host{Name: normalizeHost(r.Host)}
+		if host.Name == "" {
+			return next.ServeHTTP(w, r)
+		}
 	}
+	report404 := host.Report404 || h.Report404 == Report404All
 
-	if r.URL.Path == rs.CheckPath {
+	if listed && r.URL.Path == rs.CheckPath {
 		body := "token=" + host.Token + " etag=" + rs.ETag
 		hdr := w.Header()
 		hdr.Set("Content-Type", "text/plain; charset=utf-8")
@@ -159,7 +185,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return nil
 	}
 
-	if host.CatchAll == nil && !host.Report404 {
+	if host.CatchAll == nil && !report404 {
 		return next.ServeHTTP(w, r)
 	}
 
@@ -182,7 +208,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 				h.redirect(w, r, host, *catchAll)
 				return nil
 			}
-			h.report(r, host, http.StatusNotFound, 0)
+			if report404 {
+				h.report(r, host, http.StatusNotFound, 0, "", "")
+			}
 		}
 		return err
 	}
@@ -192,19 +220,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		h.redirect(w, r, host, *catchAll)
 		return nil
 	}
-	if rec.Status() == http.StatusNotFound && host.Report404 {
-		h.report(r, host, http.StatusNotFound, rec.Size())
+	if rec.Status() == http.StatusNotFound && report404 {
+		h.report(r, host, http.StatusNotFound, rec.Size(), "", "")
 	}
 	return nil
 }
 
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request, host *Host, rule Rule) {
-	w.Header().Set("Location", rule.Location(r))
+	location := rule.Location(r)
+	w.Header().Set("Location", location)
 	w.WriteHeader(rule.Status)
-	h.report(r, host, rule.Status, 0)
+	h.report(r, host, rule.Status, 0, rule.Source, location)
 }
 
-func (h *Handler) report(r *http.Request, host *Host, status, size int) {
+// report queues one report line; a redirect carries the rule's source and
+// the Location it sent, a 404 neither.
+func (h *Handler) report(r *http.Request, host *Host, status, size int, source, location string) {
 	if h.reporter == nil || h.key == "" {
 		return
 	}
@@ -212,7 +243,7 @@ func (h *Handler) report(r *http.Request, host *Host, status, size int) {
 	if h.now != nil {
 		now = h.now
 	}
-	h.reporter.Enqueue(hitLine(r, host.Name, status, size, now()))
+	h.reporter.Enqueue(hitLine(r, host.Name, status, size, now(), source, location))
 }
 
 // restoreHeader makes dst equal to saved, dropping what the discarded

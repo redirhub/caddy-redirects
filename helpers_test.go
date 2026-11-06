@@ -34,10 +34,10 @@ const sampleRules = "@format 1\n" +
 	"@check /_redirhub/check\n" +
 	"@host promo.example.com check=EEEXQ4RS report404\n" +
 	"@host shop.example.com check=K3Vb9QmX\n" +
-	"https://promo.example.com/old-pricing\thttps://promo.example.com/pricing\n" +
-	"https://promo.example.com/promo\thttps://sale.example.com/\t302\n" +
-	"https://shop.example.com/*\thttps://www.example.net/\t301\tpq\n" +
-	"https://shop.example.com/caf%C3%A9\thttps://www.example.net/cafe\t308\n"
+	"promo.example.com/old-pricing\thttps://promo.example.com/pricing\n" +
+	"promo.example.com/promo\thttps://sale.example.com/\t302\n" +
+	"shop.example.com/*\thttps://www.example.net/\t301\tpq\n" +
+	"shop.example.com/caf%C3%A9\thttps://www.example.net/cafe\t308\n"
 
 // rulesServer serves a rules file with ETag / 304 support.
 type rulesServer struct {
