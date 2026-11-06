@@ -100,10 +100,13 @@ redirects [<rules_url>] {
   can monitor 404s without adding each domain to RedirHub first. Hostnames that are not in the
   rules get nothing else: no redirects, no check path.
 
-The directive is ordered `before redir` automatically, so it runs before `redir` and the
-handlers that serve your site (`reverse_proxy`, `php_fastcgi`, `file_server`, …), and after
-`rewrite`, `uri` and `header`. You may still write `order redirects before redir` (or another
-position) in the global options.
+The directive is ordered `before redir` automatically: it runs after `header` and before `redir`,
+`rewrite`, `uri`, `try_files` and the handlers that serve your site (`reverse_proxy`,
+`php_fastcgi`, `file_server`, …). Rules match the path as the client sent it, before any rewrite.
+A catch-all rule only fires when the rest of the route answers 404: behind `try_files` with a
+fallback (a single-page app's `try_files {path} /index.html`, `php_fastcgi`'s own fallback) the
+site never answers 404, so the catch-all never fires. You may still write
+`order redirects before redir` (or another position) in the global options.
 
 The permission module:
 
@@ -161,8 +164,9 @@ handler instances use it, and it survives config reloads.
 
 ## Behaviour
 
-Only **GET and HEAD** requests on a **hostname listed** in the rules are touched; everything else
-goes to the rest of the route unchanged.
+Only **GET and HEAD** requests on a **hostname listed** in the rules are redirected or answered;
+everything else goes to the rest of the route unchanged. With `report_404 all`, the 404 answers of
+unlisted hostnames are reported too, but their responses are not changed.
 
 1. **Check path** (`/_redirhub/check`): answered with `200`, `text/plain`, `Cache-Control:
    no-store` and `token=<check token> etag=<ETag of the rules in use>`. This proves the hostname
@@ -175,10 +179,12 @@ goes to the rest of the route unchanged.
    Unlike a domain connected to RedirHub by DNS, where the catch-all takes the whole domain, the
    home page `/` and every other page your site serves stay with your site; to send them away
    too, add an exact rule for each (e.g. `{host}/`).
-   Responses other than 404 stream through without buffering.
+   Responses other than 404 stream through without buffering, and a 404 the catch-all replaces is
+   discarded as it is written, never held in memory.
 
 Matching uses the request's hostname (any letter case, port ignored) and path (case-sensitive,
-compared percent-decoded); the scheme and query string are ignored. Without the `q` flag the
+compared percent-decoded, leading and trailing slashes ignored as on RedirHub's edge: `/old/` and
+`//old` match the rule `{host}/old`); the scheme and query string are ignored. Without the `q` flag the
 query string is dropped from the target; with `q` it is kept; with `p` (catch-all only) the
 request path is appended to the target.
 
@@ -276,7 +282,7 @@ Each report line is the Apache combined log format with the absolute URL:
 
 That is: the visitor's IP address (Caddy's client IP, which honours `trusted_proxies`), the
 time (UTC), the method, the requested URL with its query string, the protocol, the status, the
-response size, the `Referer` and the `User-Agent`; for a redirect also the rule's source and the
+response size, the `Referer` and the `User-Agent` (each cut to 1 KB); for a redirect also the rule's source and the
 `Location` sent. No cookies, other headers, request bodies or
 response bodies are sent. Only redirects, and 404s of hostnames with 404 reporting turned on
 (the **Report 404 pages** switch in the dashboard, or every hostname with `report_404 all`), are
@@ -290,7 +296,8 @@ key.
   destinations split between several targets) and wildcard hostnames need DNS mode; the rules
   file only contains plain 301/302/307/308 redirects.
 - The rules file is at most 32 MB here (RedirHub keeps each hostname under 50,000 rules).
-- Redirect changes take effect within the poll interval (60 seconds by default).
+- Redirect changes take effect within a second or two while the push subscription (`@notify`)
+  is connected, otherwise within the poll interval (`@refresh`, 60 seconds by default).
 - At most 10,000 report lines wait in memory; beyond that, lines are dropped until the queue
   drains.
 

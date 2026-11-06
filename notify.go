@@ -66,6 +66,14 @@ type notifier struct {
 	connected bool
 	lastID    string
 
+	// An outage is logged once: Warn at its first failed or dropped
+	// connection (down), Info at the first connection after it (upLogged).
+	// Attempts in between, and connections that drop again before they
+	// held for notifyStableAfter, log at Debug. Only run and connect use
+	// these.
+	down     bool
+	upLogged bool
+
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -154,10 +162,18 @@ func (n *notifier) run(ctx context.Context) {
 			return
 		}
 		if time.Since(started) > notifyStableAfter {
+			// a connection that held ended an outage: the next drop is news
 			delay = notifyMinBackoff
+			n.down = false
 		}
-		n.logger.Warn("rules notify disconnected; polling every @refresh until it is back",
-			zap.String("hub", n.where()), zap.String("error", errString(err)), zap.Duration("retry_in", delay))
+		if !n.down {
+			n.down, n.upLogged = true, false
+			n.logger.Warn("rules notify disconnected; polling every @refresh until it is back",
+				zap.String("hub", n.where()), zap.String("error", errString(err)), zap.Duration("retry_in", delay))
+		} else {
+			n.logger.Debug("rules notify still disconnected",
+				zap.String("hub", n.where()), zap.String("error", errString(err)), zap.Duration("retry_in", delay))
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -217,7 +233,16 @@ func (n *notifier) connect(ctx context.Context) error {
 	}
 	timer.Reset(notifyIdleTimeout)
 	n.setConnected(true)
-	n.logger.Info("rules notify connected", zap.String("hub", n.where()))
+	switch {
+	case n.down && !n.upLogged:
+		n.upLogged = true
+		n.logger.Info("rules notify reconnected", zap.String("hub", n.where()))
+	case !n.down && !n.upLogged:
+		n.upLogged = true
+		n.logger.Info("rules notify connected", zap.String("hub", n.where()))
+	default:
+		n.logger.Debug("rules notify connected", zap.String("hub", n.where()))
+	}
 	pulse(n.wake)
 
 	scanner := bufio.NewScanner(&idleReader{body: resp.Body, timer: timer, idle: notifyIdleTimeout})

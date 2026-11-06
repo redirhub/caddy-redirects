@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 )
 
@@ -339,12 +340,12 @@ func TestNotifyFollowsTheDirective(t *testing.T) {
 
 func TestNotifyNeverLogsTheTokenOrTopic(t *testing.T) {
 	shortNotify(t, time.Hour)
-	core, logs := observer.New(zap.InfoLevel)
+	core, logs := observer.New(zap.DebugLevel)
 	hub := newFakeHub(t)
 	hub.set(http.StatusUnauthorized)
 	rules := newRulesServer(t, notifyRules(hub, ""), `"v1"`)
 	startFetcher(t, rules.URL, zap.New(core))
-	waitFor(t, "a logged failure", func() bool { return logs.FilterMessageSnippet("notify disconnected").Len() >= 2 })
+	waitFor(t, "logged failures", func() bool { return logs.FilterMessageSnippet("disconnected").Len() >= 2 })
 
 	// and a hub that does not listen at all
 	addr := hub.URL
@@ -366,5 +367,53 @@ func TestNotifyNeverLogsTheTokenOrTopic(t *testing.T) {
 		if hubURL, ok := e.ContextMap()["hub"]; ok && hubURL != addr+"/.well-known/mercure" {
 			t.Errorf("hub = %q", hubURL)
 		}
+	}
+}
+
+// An outage is logged once at Warn and its end once at Info, however many
+// attempts it takes; the attempts in between log at Debug.
+func TestNotifyLogsAnOutageOnce(t *testing.T) {
+	shortNotify(t, time.Hour)
+	core, logs := observer.New(zap.InfoLevel)
+	hub := newFakeHub(t)
+	rules := newRulesServer(t, notifyRules(hub, ""), `"v1"`)
+	f := startFetcher(t, rules.URL, zap.New(core))
+	waitFor(t, "the subscription", func() bool { return f.notify.Load().Connected() })
+
+	hub.set(http.StatusServiceUnavailable)
+	hub.dropAll()
+	waitFor(t, "several attempts", func() bool {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		return hub.connects == 1 && rules.count() >= 1 && !f.notify.Load().Connected()
+	})
+	time.Sleep(300 * time.Millisecond) // ~10 attempts at a 40 ms backoff
+	hub.set(0)
+	waitFor(t, "the reconnect", func() bool { return f.notify.Load().Connected() })
+	// a connection that drops before it held is the same outage
+	hub.dropAll()
+	waitFor(t, "the second reconnect", func() bool {
+		hub.mu.Lock()
+		defer hub.mu.Unlock()
+		return hub.connects >= 3 && f.notify.Load().Connected()
+	})
+
+	count := func(level zapcore.Level, snippet string) int {
+		n := 0
+		for _, e := range logs.FilterMessageSnippet(snippet).All() {
+			if e.Level == level {
+				n++
+			}
+		}
+		return n
+	}
+	if n := count(zap.WarnLevel, "notify disconnected"); n != 1 {
+		t.Errorf("disconnect warnings = %d, want 1", n)
+	}
+	if n := count(zap.InfoLevel, "notify reconnected"); n != 1 {
+		t.Errorf("reconnect infos = %d, want 1", n)
+	}
+	if n := count(zap.InfoLevel, "notify connected"); n != 1 {
+		t.Errorf("connect infos = %d, want 1", n)
 	}
 }

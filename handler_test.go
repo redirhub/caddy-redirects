@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -77,6 +78,45 @@ func TestCatchAllOnlyOnSite404(t *testing.T) {
 	if w.Header().Get("X-Site-404") != "" || w.Header().Get("Content-Type") != "" {
 		t.Errorf("404 headers leaked: %v", w.Header())
 	}
+}
+
+// The site's 404 page that the catch-all replaces is discarded as it is
+// written, not buffered: a huge one costs no memory.
+func TestCatchAllDiscardsALarge404Body(t *testing.T) {
+	env := newTestEnv(t, sampleRules)
+	const total = 64 << 20
+	chunk := make([]byte, 1<<20)
+	next := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusNotFound)
+		for written := 0; written < total/2; written += len(chunk) {
+			if _, err := w.Write(chunk); err != nil {
+				return err
+			}
+		}
+		http.NewResponseController(w).Flush()
+		// the other half through ReadFrom, as file_server sends a file
+		_, err := io.Copy(w, io.LimitReader(zeros{}, total/2))
+		return err
+	})
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	w := serve(t, env.h, next, request("GET", "https://shop.example.com/missing"))
+	runtime.ReadMemStats(&after)
+	if w.Code != 301 || w.Header().Get("Location") != "https://www.example.net/missing" || w.Body.Len() != 0 {
+		t.Fatalf("got %d %q body %d bytes", w.Code, w.Header().Get("Location"), w.Body.Len())
+	}
+	if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 16<<20 {
+		t.Errorf("allocated %d MiB for a discarded 404", alloc>>20)
+	}
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 func TestCatchAllOnHandlerError404(t *testing.T) {
@@ -183,12 +223,22 @@ func TestSiteErrorPassesThrough(t *testing.T) {
 	}
 }
 
-func TestValidateReport404(t *testing.T) {
+func TestProvisionChecksReport404BeforeStartingThePoller(t *testing.T) {
+	rules := newRulesServer(t, sampleRules, `"e"`)
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
 	for value, ok := range map[string]bool{"": true, "rules": true, "all": true, "none": false} {
-		h := Handler{rulesURL: "https://rules.example.test/x.txt", Report404: value}
-		if err := h.Validate(); (err == nil) != ok {
+		url := rules.URL + "/report404-" + value + ".txt"
+		h := &Handler{RulesURL: url, Report404: value}
+		err := h.Provision(ctx)
+		if (err == nil) != ok {
 			t.Errorf("report_404 %q: %v", value, err)
 		}
+		_, started := rulesPool.References(url)
+		if started != ok {
+			t.Errorf("report_404 %q: poller started %v", value, started)
+		}
+		h.Cleanup()
 	}
 }
 
@@ -242,9 +292,6 @@ func TestProvisionSharesOnePoller(t *testing.T) {
 	b := &Handler{RulesURL: rules.URL + "/shared.txt", Key: "k2"}
 	for _, h := range []*Handler{a, b} {
 		if err := h.Provision(ctx); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.Validate(); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -174,8 +174,7 @@ func newTestEnv(t *testing.T, body string) *testEnv {
 	}, nil)
 	r.start()
 	t.Cleanup(func() { r.Destruct() })
-	h := &Handler{rules: f, reporter: r, key: "reh_int_test",
-		now: func() time.Time { return time.Date(2026, 10, 31, 19, 10, 0, 0, time.UTC) }}
+	h := &Handler{rules: f, reporter: r, key: "reh_int_test"}
 	return &testEnv{h: h, f: f, rules: rules, hits: hits}
 }
 

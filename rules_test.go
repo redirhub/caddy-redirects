@@ -162,3 +162,49 @@ func TestLocation(t *testing.T) {
 		})
 	}
 }
+
+// Paths match the way the edge looks them up: leading and trailing slashes
+// trimmed, in the rules and in the request.
+func TestMatchTrimsSlashesLikeTheEdge(t *testing.T) {
+	rs, err := ParseRules([]byte("@host a.example.com check=T\n"+
+		"a.example.com/old\thttps://x.example.com/old\n"+
+		"a.example.com/dir/\thttps://x.example.com/dir\n"+
+		"a.example.com//double\thttps://x.example.com/double\n"+
+		"a.example.com/\thttps://x.example.com/root\n"+
+		"a.example.com/in//side\thttps://x.example.com/inside\n"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := rs.Host("a.example.com")
+	cases := map[string]string{
+		"/old":         "https://x.example.com/old",
+		"/old/":        "https://x.example.com/old",
+		"//old":        "https://x.example.com/old",
+		"//old//":      "https://x.example.com/old",
+		"/dir":         "https://x.example.com/dir",
+		"/dir/":        "https://x.example.com/dir",
+		"/double":      "https://x.example.com/double",
+		"/":            "https://x.example.com/root",
+		"//":           "https://x.example.com/root",
+		"/in//side":    "https://x.example.com/inside",
+		"/in/side":     "",
+		"/old/deeper":  "",
+		"/%2Fold%2F":   "https://x.example.com/old",
+		"/unknown/":    "",
+		"/olds":        "",
+		"/old?x=1":     "https://x.example.com/old",
+		"/dir/?utm=x/": "https://x.example.com/dir",
+	}
+	for path, want := range cases {
+		r, ok := host.Match(httptest.NewRequest("GET", "https://a.example.com"+path, nil))
+		if want == "" {
+			if ok {
+				t.Errorf("%s matched %s", path, r.Target)
+			}
+			continue
+		}
+		if !ok || r.Target != want {
+			t.Errorf("%s: got %q %v, want %s", path, r.Target, ok, want)
+		}
+	}
+}

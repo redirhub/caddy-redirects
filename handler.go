@@ -19,9 +19,9 @@
 package redirects
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,7 +33,7 @@ import (
 )
 
 // Version is sent in the User-Agent of rules downloads and reports.
-const Version = "0.3.1"
+const Version = "0.3.2"
 
 func init() {
 	caddy.RegisterModule(Handler{})
@@ -65,7 +65,6 @@ type Handler struct {
 	rules    *fetcher
 	reporter *reporter
 	logger   *zap.Logger
-	now      func() time.Time
 }
 
 // CaddyModule returns the Caddy module information.
@@ -82,7 +81,11 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	repl := caddy.NewReplacer()
 	h.rulesURL = repl.ReplaceAll(h.RulesURL, "")
 	h.key = repl.ReplaceAll(h.Key, "")
-	h.now = time.Now
+	// Checked here, before the shared poller starts: Caddy calls Validate
+	// only after Provision.
+	if err := validateReport404(h.Report404); err != nil {
+		return err
+	}
 	if err := validateRulesURL(h.rulesURL); err != nil {
 		return err
 	}
@@ -102,14 +105,12 @@ func (h *Handler) Provision(ctx caddy.Context) error {
 	return nil
 }
 
-// Validate checks the configuration.
-func (h *Handler) Validate() error {
-	switch h.Report404 {
+func validateReport404(value string) error {
+	switch value {
 	case "", Report404Rules, Report404All:
-	default:
-		return fmt.Errorf("report_404 must be %q or %q, not %q", Report404Rules, Report404All, h.Report404)
+		return nil
 	}
-	return validateRulesURL(h.rulesURL)
+	return fmt.Errorf("report_404 must be %q or %q, not %q", Report404Rules, Report404All, value)
 }
 
 // The values of report_404.
@@ -189,13 +190,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return next.ServeHTTP(w, r)
 	}
 
-	// Let the site answer; buffer its response only when it is a 404 that
-	// the catch-all replaces. Everything else streams through.
+	// Let the site answer; a 404 that the catch-all replaces is discarded
+	// as it is written, never buffered. Everything else streams through.
 	catchAll := host.CatchAll
 	saved := w.Header().Clone()
-	rec := caddyhttp.NewResponseRecorder(w, new(bytes.Buffer), func(status int, _ http.Header) bool {
-		return catchAll != nil && status == http.StatusNotFound
-	})
+	rec := &notFoundRecorder{ResponseWriterWrapper: &caddyhttp.ResponseWriterWrapper{ResponseWriter: w}, discard404: catchAll != nil}
 	err := next.ServeHTTP(rec, r)
 
 	if err != nil {
@@ -215,7 +214,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return err
 	}
 
-	if rec.Buffered() && rec.Status() == http.StatusNotFound {
+	if rec.discarded {
 		restoreHeader(w.Header(), saved)
 		h.redirect(w, r, rs, host, *catchAll)
 		return nil
@@ -244,11 +243,7 @@ func (h *Handler) report(r *http.Request, host *Host, status, size int, source, 
 	if h.reporter == nil || h.key == "" {
 		return
 	}
-	now := time.Now
-	if h.now != nil {
-		now = h.now
-	}
-	h.reporter.Enqueue(hitLine(r, host.Name, status, size, now(), source, location))
+	h.reporter.Enqueue(hitLine(r, host.Name, status, size, time.Now(), source, location))
 }
 
 // restoreHeader makes dst equal to saved, dropping what the discarded
@@ -262,10 +257,79 @@ func restoreHeader(dst, saved http.Header) {
 	}
 }
 
+// notFoundRecorder passes the site's response through and records its
+// status and size; with discard404 a 404 is not sent but discarded as it is
+// written, so its body costs no memory however large it is.
+type notFoundRecorder struct {
+	*caddyhttp.ResponseWriterWrapper
+	discard404 bool
+
+	status      int
+	size        int
+	wroteHeader bool
+	discarded   bool // the 404 was discarded: nothing was sent
+}
+
+func (rec *notFoundRecorder) WriteHeader(status int) {
+	if rec.wroteHeader {
+		return
+	}
+	rec.status = status
+	if status >= 100 && status <= 199 {
+		// informational, not the final answer: passed on
+		rec.ResponseWriterWrapper.WriteHeader(status)
+		return
+	}
+	rec.wroteHeader = true
+	if rec.discard404 && status == http.StatusNotFound {
+		rec.discarded = true
+		return
+	}
+	rec.ResponseWriterWrapper.WriteHeader(status)
+}
+
+func (rec *notFoundRecorder) Write(p []byte) (int, error) {
+	rec.WriteHeader(http.StatusOK)
+	if rec.discarded {
+		rec.size += len(p)
+		return len(p), nil
+	}
+	n, err := rec.ResponseWriterWrapper.Write(p)
+	rec.size += n
+	return n, err
+}
+
+func (rec *notFoundRecorder) ReadFrom(r io.Reader) (int64, error) {
+	rec.WriteHeader(http.StatusOK)
+	var n int64
+	var err error
+	if rec.discarded {
+		n, err = io.Copy(io.Discard, r)
+	} else {
+		n, err = rec.ResponseWriterWrapper.ReadFrom(r)
+	}
+	rec.size += int(n)
+	return n, err
+}
+
+// FlushError flushes what is sent; a discarded 404 has nothing to flush.
+func (rec *notFoundRecorder) FlushError() error {
+	if rec.discarded {
+		return nil
+	}
+	//nolint:bodyclose
+	return http.NewResponseController(rec.ResponseWriterWrapper).Flush()
+}
+
+// Status is the status the site wrote, 0 for none.
+func (rec *notFoundRecorder) Status() int { return rec.status }
+
+// Size is the number of body bytes the site wrote.
+func (rec *notFoundRecorder) Size() int { return rec.size }
+
 // Interface guards
 var (
 	_ caddy.Provisioner           = (*Handler)(nil)
-	_ caddy.Validator             = (*Handler)(nil)
 	_ caddy.CleanerUpper          = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
 )

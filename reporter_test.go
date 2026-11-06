@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestReportLineFormat(t *testing.T) {
@@ -18,6 +20,14 @@ func TestReportLineFormat(t *testing.T) {
 	serve(t, env.h, &site{}, r)
 
 	lines := env.hits.waitLines(t, 1)
+	stamp := regexp.MustCompile(`\[[^]]+\]`)
+	if !stamp.MatchString(lines[0]) {
+		t.Fatalf("no time in %s", lines[0])
+	}
+	if _, err := time.Parse("02/Jan/2006:15:04:05 -0700", strings.Trim(stamp.FindString(lines[0]), "[]")); err != nil {
+		t.Errorf("time: %v", err)
+	}
+	lines[0] = stamp.ReplaceAllString(lines[0], "[31/Oct/2026:19:10:00 +0000]")
 	want := `203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.com/old-pricing?utm=x HTTP/1.1" 301 0 "https://google.example/" "Mozilla/5.0 \"quoted\" \\slash" file=promo.example.com/old-pricing destination=https://promo.example.com/pricing`
 	if lines[0] != want {
 		t.Errorf("line\n got %s\nwant %s", lines[0], want)
@@ -77,6 +87,42 @@ func TestReportLineFieldsArePercentEncoded(t *testing.T) {
 	}
 	if got := hitLine(r, "a.example.com", 302, 0, time.Now(), "a.example.com/x", ""); !strings.HasSuffix(got, " file=a.example.com/x destination=-") {
 		t.Errorf("got %s", got)
+	}
+}
+
+// Referer and User-Agent are capped at 1 KB before they are escaped, so a
+// cut never splits an escape or a UTF-8 character.
+func TestReportLineCapsRefererAndUserAgent(t *testing.T) {
+	r := request("GET", "https://a.example.com/x")
+	r.Header.Set("User-Agent", strings.Repeat("A", 400<<10))
+	r.Header.Set("Referer", "https://r.example.com/"+strings.Repeat("é", 600))
+	got := hitLine(r, "a.example.com", 301, 0, time.Now(), "a.example.com/x", "https://b.example.com/")
+	if !strings.Contains(got, `"`+strings.Repeat("A", maxHeaderField)+`" file=`) {
+		t.Errorf("user agent not capped at %d bytes: %d byte line", maxHeaderField, len(got))
+	}
+	_, ref, _ := strings.Cut(got, `301 0 "`)
+	ref, _, _ = strings.Cut(ref, `"`)
+	if len(ref) > maxHeaderField || len(ref) < maxHeaderField-3 || !utf8.ValidString(ref) {
+		t.Errorf("referer is %d bytes, valid UTF-8 %v", len(ref), utf8.ValidString(ref))
+	}
+
+	// a quote at the cut is escaped whole, never left as a lone backslash
+	r.Header.Set("User-Agent", strings.Repeat("a", maxHeaderField-1)+`"tail`)
+	if got := hitLine(r, "a.example.com", 404, 0, time.Now(), "", ""); !strings.HasSuffix(got, strings.Repeat("a", maxHeaderField-1)+`\""`) {
+		t.Errorf("escaped cut: %s", got[len(got)-20:])
+	}
+}
+
+// A raw query with a space (HTTP/2 and HTTP/3 can carry one) is
+// percent-encoded, so the request line keeps its three parts.
+func TestReportLineEncodesTheRequestURL(t *testing.T) {
+	r := request("GET", "https://a.example.com/x")
+	r.URL.RawQuery = `q=a b"c\d` + "\x01"
+	got := hitLine(r, "a.example.com", 404, 0, time.Now(), "", "")
+	_, req, _ := strings.Cut(got, `] "`)
+	req, _, _ = strings.Cut(req, `" `)
+	if parts := strings.Split(req, " "); len(parts) != 3 || parts[1] != "https://a.example.com/x?q=a%20b%22c%5Cd%01" {
+		t.Errorf("request line = %q", req)
 	}
 }
 

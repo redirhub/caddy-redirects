@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -89,6 +90,82 @@ func TestFetchTimeout(t *testing.T) {
 	f.fetch(context.Background())
 	if time.Since(start) > 2*time.Second || f.Rules() != nil {
 		t.Error("slow server must time out without rules")
+	}
+}
+
+// The header timeout does not cover the body: a large file over a slow
+// link still arrives, within the body deadline.
+func TestFetchSlowBodyWithinTheBodyDeadline(t *testing.T) {
+	oldHeader, oldBody := fetchTimeout, fetchBodyTimeout
+	fetchTimeout, fetchBodyTimeout = 100*time.Millisecond, 3*time.Second
+	defer func() { fetchTimeout, fetchBodyTimeout = oldHeader, oldBody }()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		// 400 ms for the body, four times the header timeout
+		for _, line := range strings.SplitAfter(sampleRules, "\n") {
+			fmt.Fprint(w, line)
+			w.(http.Flusher).Flush()
+			time.Sleep(40 * time.Millisecond)
+		}
+	}))
+	defer srv.Close()
+	f := newFetcher(srv.URL, nil, "")
+	if err := f.fetchOnce(context.Background()); err != nil {
+		t.Fatalf("slow body: %v", err)
+	}
+	if f.Rules().Host("promo.example.com") == nil {
+		t.Error("slow body not used")
+	}
+}
+
+func TestFetchBodyDeadline(t *testing.T) {
+	oldHeader, oldBody := fetchTimeout, fetchBodyTimeout
+	fetchTimeout, fetchBodyTimeout = 100*time.Millisecond, 300*time.Millisecond
+	defer func() { fetchTimeout, fetchBodyTimeout = oldHeader, oldBody }()
+
+	block := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "@host promo.example.com check=X\n")
+		w.(http.Flusher).Flush()
+		select {
+		case <-block:
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	defer close(block)
+	f := newFetcher(srv.URL, nil, "")
+	start := time.Now()
+	err := f.fetchOnce(context.Background())
+	if err == nil || f.Rules() != nil {
+		t.Fatalf("a body that never ends must fail: %v", err)
+	}
+	if took := time.Since(start); took < 250*time.Millisecond || took > 2*time.Second {
+		t.Errorf("gave up after %v, want the body deadline", took)
+	}
+}
+
+func TestPersistFailureWarnsOnce(t *testing.T) {
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "file")
+	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	core, logs := observer.New(zap.DebugLevel)
+	rules := newRulesServer(t, sampleRules, `"v1"`)
+	// the parent of the copy is a file: every save fails
+	f := newFetcher(rules.URL, zap.New(core), filepath.Join(blocker, "rules"))
+	f.fetch(context.Background())
+	rules.set(sampleRules+"\n", `"v2"`, 0)
+	f.fetch(context.Background())
+	if f.Rules() == nil || f.Rules().ETag != "v2" {
+		t.Fatal("a failed save must not stop the rules from being used")
+	}
+	saves := logs.FilterMessageSnippet("could not save")
+	if saves.Len() != 1 || saves.All()[0].Level != zap.WarnLevel {
+		t.Errorf("save failures logged %d times: %v", saves.Len(), saves.All())
 	}
 }
 

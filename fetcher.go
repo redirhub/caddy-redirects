@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -39,8 +40,16 @@ import (
 var (
 	pollOverride  time.Duration      // tests only: replaces @refresh when set
 	retryInterval = 10 * time.Second // until the first good copy
-	fetchTimeout  = 5 * time.Second
+	// fetchTimeout bounds connecting, the TLS handshake and the wait for
+	// the response headers; fetchBodyTimeout the whole download, so a
+	// large file still arrives over a slow link.
+	fetchTimeout     = 5 * time.Second
+	fetchBodyTimeout = 60 * time.Second
 )
+
+// saveWarnInterval throttles the warning for a persisted copy that cannot
+// be saved: it repeats on every changed download.
+const saveWarnInterval = time.Hour
 
 // maxRulesSize bounds the rules file; a larger body counts as a failure.
 const maxRulesSize = 32 << 20
@@ -59,6 +68,9 @@ type fetcher struct {
 
 	etag    string // raw ETag sent as If-None-Match; only the poll loop uses it
 	failing bool
+	// lastSaveWarn is when a failed save of the persisted copy was last
+	// logged; only the poll loop uses it.
+	lastSaveWarn time.Time
 
 	// notify is the push subscription of the rules' @notify, or nil; only
 	// the poll loop changes it.
@@ -93,13 +105,23 @@ func newFetcher(url string, logger *zap.Logger, file string) *fetcher {
 	}
 	f := &fetcher{
 		url:    url,
-		client: &http.Client{Timeout: fetchTimeout},
+		client: newFetchClient(),
 		logger: logger,
 		file:   file,
 		done:   make(chan struct{}),
 	}
 	f.loadPersisted()
 	return f
+}
+
+// newFetchClient waits fetchTimeout for a server to connect and answer, and
+// fetchBodyTimeout for the whole body.
+func newFetchClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = (&net.Dialer{Timeout: fetchTimeout, KeepAlive: 30 * time.Second}).DialContext
+	transport.TLSHandshakeTimeout = fetchTimeout
+	transport.ResponseHeaderTimeout = fetchTimeout
+	return &http.Client{Transport: transport, Timeout: fetchBodyTimeout}
 }
 
 // Rules returns the rules in use, or nil before the first good copy.
@@ -284,7 +306,11 @@ func (f *fetcher) persist(etag string, body []byte) {
 		return
 	}
 	if err := writeFileAtomic(f.file, append([]byte(strings.ReplaceAll(etag, "\n", "")+"\n"), body...)); err != nil {
-		f.logger.Debug("could not save the rules copy", zap.String("file", f.file), zap.Error(err))
+		if time.Since(f.lastSaveWarn) >= saveWarnInterval {
+			f.lastSaveWarn = time.Now()
+			f.logger.Warn("could not save the rules copy; a restart cannot redirect until the first download",
+				zap.String("file", f.file), zap.Error(err))
+		}
 	}
 }
 

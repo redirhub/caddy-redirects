@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -44,6 +45,9 @@ const (
 	queueSize     = 10000 // lines waiting to be batched; more are dropped
 
 	dropLogInterval = 10 * time.Minute
+
+	// maxHeaderField caps the Referer and User-Agent in a report line.
+	maxHeaderField = 1024
 )
 
 // reporterPool holds one reporter per rules URL and key.
@@ -258,7 +262,9 @@ func hitLine(req *http.Request, host string, status, size int, now time.Time, so
 	b.WriteString(`] "`)
 	b.WriteString(escape(req.Method))
 	b.WriteByte(' ')
-	b.WriteString(escape(scheme + "://" + host + req.URL.RequestURI()))
+	// Percent-encoded, not backslash-escaped: a space (a raw query may
+	// hold one) would split the request line.
+	b.WriteString(fieldValue(scheme + "://" + host + req.URL.RequestURI()))
 	b.WriteByte(' ')
 	b.WriteString(escape(req.Proto))
 	b.WriteString(`" `)
@@ -266,9 +272,9 @@ func hitLine(req *http.Request, host string, status, size int, now time.Time, so
 	b.WriteByte(' ')
 	b.WriteString(strconv.Itoa(size))
 	b.WriteString(` "`)
-	b.WriteString(orDash(escape(req.Referer())))
+	b.WriteString(orDash(escape(truncate(req.Referer(), maxHeaderField))))
 	b.WriteString(`" "`)
-	b.WriteString(orDash(escape(req.UserAgent())))
+	b.WriteString(orDash(escape(truncate(req.UserAgent(), maxHeaderField))))
 	b.WriteByte('"')
 	if source != "" {
 		b.WriteString(" file=")
@@ -317,6 +323,22 @@ func clientIP(req *http.Request) string {
 		return "-"
 	}
 	return escape(host)
+}
+
+// truncate cuts s to at most n bytes, on a UTF-8 boundary when s is valid
+// UTF-8. It runs before escape, so a cut never splits an escape sequence.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > n-utf8.UTFMax && cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	if !utf8.RuneStart(s[cut]) {
+		cut = n // not UTF-8: cut where the limit is
+	}
+	return s[:cut]
 }
 
 func orDash(s string) string {

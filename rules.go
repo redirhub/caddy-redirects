@@ -73,7 +73,7 @@ type Host struct {
 	Name      string
 	Token     string
 	Report404 bool
-	// Exact maps a decoded request path to its rule.
+	// Exact maps a decoded path, slashes trimmed (normalizePath), to its rule.
 	Exact map[string]Rule
 	// CatchAll is the {host}/* rule, or nil.
 	CatchAll *Rule
@@ -278,7 +278,7 @@ func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok
 	if rawPath == "/*" {
 		return host, "", true, rule, true
 	}
-	return host, decodePath(rawPath), false, rule, true
+	return host, normalizePath(decodePath(rawPath)), false, rule, true
 }
 
 // splitSource splits host/path?query into host and path; the query is
@@ -300,6 +300,12 @@ func splitSource(src string) (host, path string, ok bool) {
 		return "", "", false
 	}
 	return host, path, true
+}
+
+// normalizePath is the form a path is matched in, the edge's: leading and
+// trailing slashes trimmed ("/old/" and "//old" are "/old"), the root "/".
+func normalizePath(p string) string {
+	return "/" + strings.Trim(p, "/")
 }
 
 func decodePath(p string) string {
@@ -356,13 +362,11 @@ func (r Rule) Location(req *http.Request) string {
 }
 
 // Match returns the exact rule for the request path. Both the request
-// path and the source path are compared percent-decoded.
+// path and the source path are compared percent-decoded, without leading
+// and trailing slashes, as the edge looks them up: /old/ and //old match
+// the rule host/old.
 func (h *Host) Match(req *http.Request) (Rule, bool) {
-	p := decodePath(req.URL.EscapedPath())
-	if p == "" {
-		p = "/"
-	}
-	r, ok := h.Exact[p]
+	r, ok := h.Exact[normalizePath(decodePath(req.URL.EscapedPath()))]
 	return r, ok
 }
 

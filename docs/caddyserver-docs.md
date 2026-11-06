@@ -7,10 +7,10 @@ title: redirects (Caddyfile directive)
 Bulk redirects and 404 monitoring. Serves the redirects of a [RedirHub](https://www.redirhub.com) workspace ("Integration Mode"):
 redirects, branded short links, QR code links and website migration mappings managed outside
 Caddy, in the RedirHub dashboard, API or MCP server. Caddy downloads the workspace rules file
-every 60 seconds and serves the redirects itself; changes need no config edit or reload. When the
-rules file names a push hub (`@notify`), Caddy keeps one subscription open and downloads a change
-within a second or two, polling only hourly while it is connected and every 60 seconds again when
-it is not.
+and serves the redirects itself; changes need no config edit or reload. When the rules file names
+a push hub (`@notify`), Caddy keeps one subscription open and a change applies within seconds;
+otherwise, and while the subscription is down, changes apply at the next poll (`@refresh`, every
+60 seconds by default).
 
 For `GET` and `HEAD` requests on a hostname listed in the rules:
 
