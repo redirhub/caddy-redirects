@@ -1,0 +1,25 @@
+name	method	url	referer	user_agent	site	outcome	status	location	body	report
+exact rule before the site's own page	GET	https://promo.example.test/old-pricing	https://search.example.test/?q=pricing	Mozilla/5.0 (X11; Linux x86_64)	200	redirect	301	https://promo.example.test/pricing	-	1
+query dropped without q	GET	https://promo.example.test/old-pricing?utm=x	-	-	200	redirect	301	https://promo.example.test/pricing	-	2
+trailing slash ignored	GET	https://promo.example.test/old-pricing/	-	-	200	redirect	301	https://promo.example.test/pricing	-	3
+doubled leading slash ignored	GET	https://promo.example.test//old-pricing	-	-	200	redirect	301	https://promo.example.test/pricing	-	4
+hostname in any letter case, port ignored	GET	https://PROMO.Example.TEST:8443/old-pricing	-	-	200	redirect	301	https://promo.example.test/pricing	-	5
+http matches like https	GET	http://promo.example.test/old-pricing	-	-	200	redirect	301	https://promo.example.test/pricing	-	6
+path is case-sensitive: the site's 404, reported (report404)	GET	https://promo.example.test/Old-Pricing	-	-	404	site	404	-	-	7
+HEAD redirects like GET	HEAD	https://promo.example.test/old-pricing	-	-	200	redirect	301	https://promo.example.test/pricing	-	8
+other methods pass to the site	POST	https://promo.example.test/old-pricing	-	-	200	site	200	-	-	-
+q appends the query to a target with a query	GET	https://promo.example.test/promo?ref=nl	-	-	200	redirect	302	https://sale.example.test/?src=promo&ref=nl	-	9
+q without a request query	GET	https://promo.example.test/promo	-	-	200	redirect	302	https://sale.example.test/?src=promo	-	10
+percent-encoded request path	GET	https://promo.example.test/preise/%C3%BCber-uns	-	-	404	redirect	308	https://promo.example.test/about	-	11
+raw UTF-8 request path	GET	https://promo.example.test/preise/über-uns	-	-	404	redirect	308	https://promo.example.test/about	-	12
+lowercase percent-encoding	GET	https://promo.example.test/preise/%c3%bcber-uns	-	-	404	redirect	308	https://promo.example.test/about	-	13
+unknown option ignored	GET	https://promo.example.test/spring	-	-	404	redirect	307	https://promo.example.test/sale	-	14
+unknown flag skips the rule	GET	https://promo.example.test/beta	-	-	200	site	200	-	-	-
+a 404 with a quoted User-Agent	GET	https://promo.example.test/missing?x=1	https://www.example.test/links	Mozilla/5.0 "quoted" \slash	404	site	404	-	-	15
+check path	GET	https://promo.example.test/_redirhub/check	-	-	404	check	200	-	token=FAKEprmo etag=spec-v1	-
+check path, hostname in any letter case	GET	https://SHOP.example.test/_redirhub/check	-	-	404	check	200	-	token=FAKEshop etag=spec-v1	-
+root rule	GET	https://shop.example.test/	-	-	200	redirect	302	https://www.example.test/home	-	16
+catch-all only on the site's 404, p and q	GET	https://shop.example.test/gone/page?a=1	-	-	404	redirect	301	https://www.example.test/gone/page?a=1	-	17
+catch-all appends the escaped path	GET	https://shop.example.test/caf%C3%A9	-	-	404	redirect	301	https://www.example.test/caf%C3%A9	-	18
+catch-all leaves a working page alone	GET	https://shop.example.test/exists?a=1	-	-	200	site	200	-	-	-
+unlisted hostname passes through, its 404 not reported	GET	https://other.example.test/old-pricing	-	-	404	site	404	-	-	-

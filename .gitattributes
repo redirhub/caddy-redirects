@@ -1,0 +1,2 @@
+# The golden sample is compared byte for byte: never convert its line endings.
+spec/** -text

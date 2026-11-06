@@ -1,0 +1,15 @@
+@format 1
+@refresh 60
+@notify https://hub.example.test/.well-known/mercure?topic=integration%2FFAKEworkspaceFILEtoken token=FAKE.subscriber.jwt
+@hits https://edge.example.test/_edge/hits
+@check /_redirhub/check
+@powered-by RedirHub (integrated)
+@host promo.example.test check=FAKEprmo report404
+@host shop.example.test check=FAKEshop
+promo.example.test/beta	https://promo.example.test/new	301	x
+promo.example.test/old-pricing	https://promo.example.test/pricing
+promo.example.test/preise/%C3%BCber-uns	https://promo.example.test/about	308
+promo.example.test/promo	https://sale.example.test/?src=promo	302	q
+promo.example.test/spring	https://promo.example.test/sale	307		future=1
+shop.example.test/	https://www.example.test/home	302
+shop.example.test/*	https://www.example.test/	301	pq

@@ -243,8 +243,11 @@ func (h *Handler) report(r *http.Request, host *Host, status, size int, source, 
 	if h.reporter == nil || h.key == "" {
 		return
 	}
-	h.reporter.Enqueue(hitLine(r, host.Name, status, size, time.Now(), source, location))
+	h.reporter.Enqueue(hitLine(r, host.Name, status, size, clock(), source, location))
 }
+
+// clock is the time a report line is stamped with; tests fix it.
+var clock = time.Now
 
 // restoreHeader makes dst equal to saved, dropping what the discarded
 // 404 response set.

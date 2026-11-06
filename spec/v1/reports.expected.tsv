@@ -1,0 +1,19 @@
+client_ip	method	url	status	referer	user_agent	file	destination
+203.0.113.9	GET	https://promo.example.test/old-pricing	301	https://search.example.test/?q=pricing	Mozilla/5.0 (X11; Linux x86_64)	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	https://promo.example.test/old-pricing?utm=x	301	-	-	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	https://promo.example.test/old-pricing/	301	-	-	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	https://promo.example.test//old-pricing	301	-	-	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	https://promo.example.test/old-pricing	301	-	-	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	http://promo.example.test/old-pricing	301	-	-	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	https://promo.example.test/Old-Pricing	404	-	-	-	-
+203.0.113.9	HEAD	https://promo.example.test/old-pricing	301	-	-	promo.example.test/old-pricing	https://promo.example.test/pricing
+203.0.113.9	GET	https://promo.example.test/promo?ref=nl	302	-	-	promo.example.test/promo	https://sale.example.test/?src=promo&ref=nl
+203.0.113.9	GET	https://promo.example.test/promo	302	-	-	promo.example.test/promo	https://sale.example.test/?src=promo
+203.0.113.9	GET	https://promo.example.test/preise/%C3%BCber-uns	308	-	-	promo.example.test/preise/über-uns	https://promo.example.test/about
+203.0.113.9	GET	https://promo.example.test/preise/%C3%BCber-uns	308	-	-	promo.example.test/preise/über-uns	https://promo.example.test/about
+203.0.113.9	GET	https://promo.example.test/preise/%c3%bcber-uns	308	-	-	promo.example.test/preise/über-uns	https://promo.example.test/about
+203.0.113.9	GET	https://promo.example.test/spring	307	-	-	promo.example.test/spring	https://promo.example.test/sale
+203.0.113.9	GET	https://promo.example.test/missing?x=1	404	https://www.example.test/links	Mozilla/5.0 \"quoted\" \\slash	-	-
+203.0.113.9	GET	https://shop.example.test/	302	-	-	shop.example.test/	https://www.example.test/home
+203.0.113.9	GET	https://shop.example.test/gone/page?a=1	301	-	-	shop.example.test	https://www.example.test/gone/page?a=1
+203.0.113.9	GET	https://shop.example.test/caf%C3%A9	301	-	-	shop.example.test	https://www.example.test/caf%C3%A9

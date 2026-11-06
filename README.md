@@ -272,6 +272,11 @@ shop.example.com/*	https://www.example.net/	301	pq
   appends nothing. RedirHub takes the link from `file=` and counts the line for the key's
   workspace.
 
+**Golden sample.** [`spec/v1/`](spec/v1) holds a complete rules file, requests with the answers
+and report lines they must give, and what RedirHub logs from those lines. It is normative for
+format v1: this module's tests load it, and RedirHub's rules writer and edge test against copies
+of it.
+
 ## Privacy
 
 Each report line is the Apache combined log format with the absolute URL:
