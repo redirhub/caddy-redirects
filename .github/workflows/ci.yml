@@ -21,6 +21,18 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test -race ./...
+      - name: spec/v1 is the same as redirhub/integration-spec's
+        run: |
+          base=https://raw.githubusercontent.com/redirhub/integration-spec/main/spec/v1
+          status=0
+          for f in rules.txt requests.tsv reports.txt reports.expected.tsv; do
+            curl -fsS "$base/$f" -o "$RUNNER_TEMP/$f"
+            if ! cmp -s "$RUNNER_TEMP/$f" "spec/v1/$f"; then
+              echo "::error file=spec/v1/$f::differs from $base/$f; copy the file over"
+              status=1
+            fi
+          done
+          exit $status
       - name: Build Caddy with the module
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest

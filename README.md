@@ -14,8 +14,9 @@ them.
   rules server is out of reach.
 - On-demand HTTPS only for the hostnames in your rules.
 
-The rules file format is open ([below](#rules-file-format-v1)). [RedirHub](https://www.redirhub.com)
-publishes it for you ("Integration Mode"): you manage the redirects in its dashboard, API or MCP
+The rules file format is open:
+[Integration Mode format v1](https://github.com/redirhub/integration-spec).
+[RedirHub](https://www.redirhub.com) publishes it for you ("Integration Mode"): you manage the redirects in its dashboard, API or MCP
 server and see the redirects and 404s in its analytics.
 
 The module adds two Caddy modules:
@@ -222,60 +223,12 @@ Without the line, no header is set.
 listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
 them in the Caddyfile and without letting anyone else make Caddy request certificates.
 
-## Rules file format v1
+## Rules file format
 
-The module reads a plain-text workspace rules file:
-
-```
-@format 1
-@refresh 60
-@notify https://service.redirhub.com/.well-known/mercure?topic=integration%2F<file token> token=<jwt>
-@hits https://rediredge.com/_edge/hits
-@check /_redirhub/check
-@powered-by RedirHub (integrated)
-@host promo.example.com check=EEEXQ4RS report404
-@host shop.example.com check=K3Vb9QmX
-promo.example.com/old-pricing	https://promo.example.com/pricing
-promo.example.com/promo	https://sale.example.com/	302
-shop.example.com/*	https://www.example.net/	301	pq
-```
-
-- `@format 1`: the first line. A file whose major version is not 1 counts as a failed download:
-  the last good copy stays in use. A file without `@format` is read as v1.
-- `@refresh <seconds>`: the poll interval, clamped to 30–3600 seconds, default 60.
-- `@hits <url>`: where reports go. Without it, nothing is reported.
-- `@check <path>`: the check path (default `/_redirhub/check`).
-- `@powered-by <value>` (optional): the rest of the line, trimmed, is sent verbatim as
-  `X-Powered-By` on every redirect from the rules. Printable ASCII, up to 128 bytes.
-- `@notify <subscribe url> token=<token>` (optional): a Mercure hub's subscribe URL with the
-  file's topic, and a bearer token allowed to subscribe to it. A message on the topic means "the
-  file changed, download it now". Clients that cannot keep a connection open ignore it and poll.
-- `@host <hostname> check=<token> [report404]`: one per served hostname. Unknown `key=value`
-  fields are ignored.
-- Unknown `@` directives are ignored. Every other non-empty line is a rule.
-- A rule line has tab-separated columns:
-  `source<TAB>target[<TAB>status[<TAB>flags[<TAB>options]]]`.
-  - **source**: hostname and path without a scheme, `{host}/path` (percent-encoded where
-    needed); `{host}/*` is the host's catch-all. It matches `http` and `https` requests alike.
-    Rules for hostnames without an `@host` line are ignored, and so is a source with a scheme,
-    without a path, or with a space, `"` or `\`.
-  - **target**: an absolute URL, used as is.
-  - **status**: 301, 302, 307 or 308; empty means 301.
-  - **flags** (may be empty): `p` appends the request path (catch-all only, no double slash),
-    `q` keeps the query string (with `?` or `&`). Flags are must-understand: a rule with an
-    unknown flag letter is skipped.
-  - **options**: space-separated `key=value`, may be ignored; further columns are ignored.
-- A line that cannot be parsed is skipped; the first rule for a source wins.
-- **Reports** (to `@hits`, `Authorization: Bearer <key>`): one Apache combined line with the
-  absolute URL per redirect or 404. A redirect appends `file=<the rule's source column,
-  verbatim>` and `destination=<the Location sent>` (spaces, `"` and `\` percent-encoded); a 404
-  appends nothing. RedirHub takes the link from `file=` and counts the line for the key's
-  workspace.
-
-**Golden sample.** [`spec/v1/`](spec/v1) holds a complete rules file, requests with the answers
-and report lines they must give, and what RedirHub logs from those lines. It is normative for
-format v1: this module's tests load it, and RedirHub's rules writer and edge test against copies
-of it.
+The module reads Integration Mode **format v1**, specified in
+[redirhub/integration-spec](https://github.com/redirhub/integration-spec): the rules file, the
+check path and the report lines. `spec/v1/` here is a copy of its golden sample: this module's
+tests load it, and CI fails when it differs from the specification's.
 
 ## Privacy
 
