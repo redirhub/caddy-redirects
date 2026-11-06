@@ -211,7 +211,7 @@ func (r *reporter) send(body []byte, lines int) {
 	req.Header.Set("Authorization", "Bearer "+r.key)
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Content-Encoding", "gzip")
-	req.Header.Set("User-Agent", "caddy-redirhub/"+Version)
+	req.Header.Set("User-Agent", "caddy-redirects/"+Version)
 	resp, err := r.client.Do(req)
 	if err != nil {
 		r.dropped(lines, zap.Error(err))

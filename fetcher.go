@@ -167,7 +167,7 @@ func (f *fetcher) fetchOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "caddy-redirhub/"+Version)
+	req.Header.Set("User-Agent", "caddy-redirects/"+Version)
 	if f.etag != "" && f.Rules() != nil {
 		req.Header.Set("If-None-Match", f.etag)
 	}
