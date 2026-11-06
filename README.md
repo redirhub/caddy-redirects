@@ -154,6 +154,9 @@ goes to the rest of the route unchanged.
 3. Otherwise your site answers. Only when it answers **404** and the hostname has a **catch-all
    rule** (`https://{host}/*`), the 404 is discarded and Caddy redirects instead. A working site
    is never taken over. A 404 that a handler returns as an error (e.g. `file_server`) counts too.
+   Unlike a domain connected to RedirHub by DNS, where the catch-all takes the whole domain, the
+   home page `/` and every other page your site serves stay with your site; to send them away
+   too, add an exact rule for each (e.g. `https://{host}/`).
    Responses other than 404 stream through without buffering.
 
 Matching uses the request's hostname (any letter case, port ignored) and path (case-sensitive,
