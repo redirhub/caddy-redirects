@@ -60,6 +60,10 @@ type fetcher struct {
 	etag    string // raw ETag sent as If-None-Match; only the poll loop uses it
 	failing bool
 
+	// notify is the push subscription of the rules' @notify, or nil; only
+	// the poll loop changes it.
+	notify atomic.Pointer[notifier]
+
 	cancel context.CancelFunc
 	done   chan struct{}
 	once   sync.Once
@@ -120,25 +124,77 @@ func (f *fetcher) Destruct() error {
 	return nil
 }
 
+// loop downloads the rules, then waits for the next poll or for a push
+// message, whichever comes first. While a @notify subscription is connected
+// the poll is stretched to notifiedPoll; the moment it drops, the wait is
+// measured against @refresh again.
 func (f *fetcher) loop(ctx context.Context) {
 	defer close(f.done)
+	defer func() { f.notify.Load().stop() }()
 	for {
 		f.fetch(ctx)
-		wait := retryInterval
-		if rs := f.Rules(); rs != nil {
-			wait = rs.Refresh
-		}
-		if pollOverride > 0 {
-			wait = pollOverride
-		}
-		t := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			t.Stop()
-			return
-		case <-t.C:
+		f.syncNotifier(ctx)
+		last := time.Now()
+		for waiting := true; waiting; {
+			n := f.notify.Load()
+			var wake, changed chan struct{}
+			if n != nil {
+				wake, changed = n.wake, n.changed
+			}
+			t := time.NewTimer(max(time.Until(last.Add(f.pollInterval())), 0))
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
+				waiting = false
+			case <-wake:
+				t.Stop()
+				waiting = false
+			case <-changed:
+				t.Stop() // connected or dropped: measure the wait again
+			}
 		}
 	}
+}
+
+// pollInterval is how long after a download the next one is due.
+func (f *fetcher) pollInterval() time.Duration {
+	rs := f.Rules()
+	switch {
+	case rs != nil && f.notify.Load().Connected():
+		return notifiedPoll
+	case pollOverride > 0:
+		return pollOverride
+	case rs == nil:
+		return retryInterval
+	}
+	return rs.Refresh
+}
+
+// syncNotifier keeps one subscription for the @notify of the rules in use:
+// started when the directive appears, replaced when it changes (a new
+// token), stopped when it goes.
+func (f *fetcher) syncNotifier(ctx context.Context) {
+	var notifyURL, token string
+	if rs := f.Rules(); rs != nil {
+		notifyURL, token = rs.NotifyURL, rs.NotifyToken
+	}
+	current := f.notify.Load()
+	if notifyURL == "" {
+		if current != nil {
+			current.stop()
+			f.notify.Store(nil)
+		}
+		return
+	}
+	if current.same(notifyURL, token) {
+		return
+	}
+	current.stop()
+	n := newNotifier(notifyURL, token, f.logger)
+	f.notify.Store(n)
+	n.start(ctx)
 }
 
 // fetch downloads the rules once. Any failure keeps the last good copy.

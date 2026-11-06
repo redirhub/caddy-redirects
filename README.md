@@ -5,8 +5,9 @@ pointing at your own Caddy server; Caddy serves thousands of redirects from a re
 and reports every redirect and every 404 back, so broken links show up before your visitors find
 them.
 
-- Redirects, short links, QR code links and whole website migrations, live within a minute,
-  without editing a Caddyfile or reloading Caddy.
+- Redirects, short links, QR code links and whole website migrations, live within a second or two
+  (a push from the rules server, `@notify`) or a minute (polling), without editing a Caddyfile or
+  reloading Caddy.
 - 404 monitoring: the site's own 404s that no rule redirected are reported in the background, in
   batches, without delaying responses.
 - The last good copy of the rules is kept on disk, so a restart redirects at once even when the
@@ -181,6 +182,18 @@ compared percent-decoded); the scheme and query string are ignored. Without the 
 query string is dropped from the target; with `q` it is kept; with `p` (catch-all only) the
 request path is appended to the target.
 
+**Push, with polling as the fallback.** When the rules file has a `@notify` line, Caddy keeps one
+[Mercure](https://mercure.rocks) subscription (server-sent events) open per `rules_url` and
+downloads the rules at once when a message arrives, so a change is served within a second or two.
+The message is only a wake-up: nothing in it is trusted, Caddy downloads the file as on every
+poll. Every new connection, the first and each reconnect, also downloads once (a change may have
+come while it was closed). While the subscription is connected and healthy (the hub's heartbeat
+arrives at least once a minute), Caddy polls only **once an hour**; the moment it drops, it polls
+every `@refresh` seconds again and reconnects after 1 second, doubling up to 30 seconds (back to 1
+second after a connection that lasted over a minute), resuming with `Last-Event-ID`. The hub's
+token is never logged, nor the topic, which names the rules file. Without `@notify`, Caddy polls
+every `@refresh` seconds, as before.
+
 **Fail open.** The rules are downloaded every 60 seconds (or the file's `@refresh`), with
 `If-None-Match`, a 5 second timeout and no credentials. Any failure (network, 404, 5xx, a file
 that cannot be read) keeps the last good copy. Until the first good copy, nothing is redirected
@@ -195,6 +208,10 @@ batched in memory and sent gzip-compressed every 5 seconds, or at 100 lines or 6
 second timeout. A failed or rejected report is dropped, never retried, and never blocks or slows
 a request; when the in-memory queue is full, lines are dropped. Other statuses are never reported.
 
+**X-Powered-By.** With a `@powered-by` line, every redirect from the rules (exact and catch-all)
+carries `X-Powered-By: <its value>`; the check path, the site's own answers and its 404s do not.
+Without the line, no header is set.
+
 **On-demand TLS.** With `permission redirects`, Caddy obtains a certificate only for hostnames
 listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
 them in the Caddyfile and without letting anyone else make Caddy request certificates.
@@ -208,6 +225,8 @@ The module reads a plain-text workspace rules file:
 @refresh 60
 @hits https://rediredge.com/_edge/hits
 @check /_redirhub/check
+@powered-by RedirHub (integrated)
+@notify https://service.redirhub.com/.well-known/mercure?topic=integration%2F<file token> token=<jwt>
 @host promo.example.com check=EEEXQ4RS report404
 @host shop.example.com check=K3Vb9QmX
 promo.example.com/old-pricing	https://promo.example.com/pricing
@@ -220,6 +239,11 @@ shop.example.com/*	https://www.example.net/	301	pq
 - `@refresh <seconds>`: the poll interval, clamped to 30–3600 seconds, default 60.
 - `@hits <url>`: where reports go. Without it, nothing is reported.
 - `@check <path>`: the check path (default `/_redirhub/check`).
+- `@powered-by <value>` (optional): the rest of the line, trimmed, is sent verbatim as
+  `X-Powered-By` on every redirect from the rules. Printable ASCII, up to 128 bytes.
+- `@notify <subscribe url> token=<token>` (optional): a Mercure hub's subscribe URL with the
+  file's topic, and a bearer token allowed to subscribe to it. A message on the topic means "the
+  file changed, download it now". Clients that cannot keep a connection open ignore it and poll.
 - `@host <hostname> check=<token> [report404]`: one per served hostname. Unknown `key=value`
   fields are ignored.
 - Unknown `@` directives are ignored. Every other non-empty line is a rule.

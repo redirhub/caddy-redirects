@@ -33,7 +33,7 @@ import (
 )
 
 // Version is sent in the User-Agent of rules downloads and reports.
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 func init() {
 	caddy.RegisterModule(Handler{})
@@ -181,7 +181,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}
 
 	if rule, ok := host.Match(r); ok {
-		h.redirect(w, r, host, rule)
+		h.redirect(w, r, rs, host, rule)
 		return nil
 	}
 
@@ -205,7 +205,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		if errors.As(err, &he) && he.StatusCode == http.StatusNotFound && rec.Status() == 0 {
 			if catchAll != nil {
 				restoreHeader(w.Header(), saved)
-				h.redirect(w, r, host, *catchAll)
+				h.redirect(w, r, rs, host, *catchAll)
 				return nil
 			}
 			if report404 {
@@ -217,7 +217,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 	if rec.Buffered() && rec.Status() == http.StatusNotFound {
 		restoreHeader(w.Header(), saved)
-		h.redirect(w, r, host, *catchAll)
+		h.redirect(w, r, rs, host, *catchAll)
 		return nil
 	}
 	if rec.Status() == http.StatusNotFound && report404 {
@@ -226,9 +226,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	return nil
 }
 
-func (h *Handler) redirect(w http.ResponseWriter, r *http.Request, host *Host, rule Rule) {
+// redirect answers a rule; with @powered-by in the rules file it names the
+// platform in X-Powered-By, as the platform's own edge does.
+func (h *Handler) redirect(w http.ResponseWriter, r *http.Request, rs *RuleSet, host *Host, rule Rule) {
 	location := rule.Location(r)
 	w.Header().Set("Location", location)
+	if rs.PoweredBy != "" {
+		w.Header().Set("X-Powered-By", rs.PoweredBy)
+	}
 	w.WriteHeader(rule.Status)
 	h.report(r, host, rule.Status, 0, rule.Source, location)
 }

@@ -279,3 +279,33 @@ type responseRecorder struct {
 func (r *responseRecorder) Header() http.Header         { return r.header }
 func (r *responseRecorder) Write(b []byte) (int, error) { return len(b), nil }
 func (r *responseRecorder) WriteHeader(code int)        { r.code = code }
+
+func TestPoweredByOnRedirectsOnly(t *testing.T) {
+	env := newTestEnv(t, strings.Replace(sampleRules, "@check", "@powered-by RedirHub (integrated)\n@check", 1))
+	for _, u := range []string{
+		"https://promo.example.com/old-pricing", // exact rule
+		"https://shop.example.com/missing",      // catch-all on the site's 404
+	} {
+		w := serve(t, env.h, &site{}, request("GET", u))
+		if w.Code < 300 || w.Code > 399 || w.Header().Get("X-Powered-By") != "RedirHub (integrated)" {
+			t.Errorf("%s: got %d X-Powered-By %q", u, w.Code, w.Header().Get("X-Powered-By"))
+		}
+	}
+	for _, u := range []string{
+		"https://promo.example.com/_redirhub/check", // the check path
+		"https://promo.example.com/exists",          // the site's own page
+		"https://promo.example.com/nothing-here",    // the site's 404
+	} {
+		w := serve(t, env.h, &site{}, request("GET", u))
+		if got := w.Header().Get("X-Powered-By"); got != "" {
+			t.Errorf("%s: got %d with X-Powered-By %q", u, w.Code, got)
+		}
+	}
+
+	// without the directive, no header
+	env = newTestEnv(t, sampleRules)
+	w := serve(t, env.h, &site{}, request("GET", "https://promo.example.com/old-pricing"))
+	if w.Code != 301 || w.Header().Get("X-Powered-By") != "" {
+		t.Errorf("got %d X-Powered-By %q", w.Code, w.Header().Get("X-Powered-By"))
+	}
+}

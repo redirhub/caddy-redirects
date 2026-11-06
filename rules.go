@@ -58,6 +58,14 @@ type RuleSet struct {
 	Refresh time.Duration
 	// Hosts maps a lowercase hostname to its rules.
 	Hosts map[string]*Host
+	// NotifyURL and NotifyToken come from @notify: the Mercure subscribe
+	// URL that announces a change of this file, and the bearer token
+	// allowed to subscribe to it. Empty: poll only.
+	NotifyURL   string
+	NotifyToken string
+	// PoweredBy is the platform's name from @powered-by, sent as
+	// X-Powered-By on every redirect from the rules. Empty: no header.
+	PoweredBy string
 }
 
 // Host holds the rules of one hostname listed with @host.
@@ -119,7 +127,7 @@ func ParseRules(body []byte, etag string) (*RuleSet, error) {
 			continue
 		}
 		if strings.HasPrefix(line, "@") {
-			if err := rs.parseDirective(strings.Fields(line)); err != nil {
+			if err := rs.parseDirective(line, strings.Fields(line)); err != nil {
 				return nil, err
 			}
 			continue
@@ -152,7 +160,7 @@ func ParseRules(body []byte, etag string) (*RuleSet, error) {
 	return rs, nil
 }
 
-func (rs *RuleSet) parseDirective(f []string) error {
+func (rs *RuleSet) parseDirective(line string, f []string) error {
 	switch f[0] {
 	case "@format":
 		if len(f) < 2 {
@@ -177,6 +185,26 @@ func (rs *RuleSet) parseDirective(f []string) error {
 	case "@check":
 		if len(f) >= 2 && strings.HasPrefix(f[1], "/") {
 			rs.CheckPath = f[1]
+		}
+	case "@notify":
+		// @notify <subscribe url> token=<jwt>
+		if len(f) >= 2 {
+			if u, err := url.Parse(f[1]); err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" {
+				rs.NotifyURL = f[1]
+				for _, opt := range f[2:] {
+					if token, ok := strings.CutPrefix(opt, "token="); ok {
+						rs.NotifyToken = token
+					}
+				}
+			}
+		}
+	case "@powered-by":
+		// @powered-by <value>: the rest of the line, trimmed, used
+		// verbatim. Printable ASCII only, up to 128 bytes.
+		_, name, _ := strings.Cut(line, " ")
+		name = strings.TrimSpace(name)
+		if len(name) <= 128 && validHeaderValue(name) {
+			rs.PoweredBy = name
 		}
 	case "@host":
 		if len(f) < 2 {
@@ -336,4 +364,14 @@ func (h *Host) Match(req *http.Request) (Rule, bool) {
 	}
 	r, ok := h.Exact[p]
 	return r, ok
+}
+
+// validHeaderValue reports whether s is printable ASCII, safe in a header.
+func validHeaderValue(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
