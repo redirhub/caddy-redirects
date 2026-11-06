@@ -1,4 +1,4 @@
-# caddy-redirhub
+# caddy-redirects
 
 A [Caddy](https://caddyserver.com) v2 module for **RedirHub Integration Mode**: your domains keep
 pointing at your own Caddy server, and Caddy serves the redirects, branded short links, QR code
@@ -24,7 +24,7 @@ migrations, and people who edit redirects without touching Caddy.
 Build Caddy with the module using [xcaddy](https://github.com/caddyserver/xcaddy):
 
 ```sh
-xcaddy build --with github.com/redirhub/caddy-redirhub
+xcaddy build --with github.com/redirhub/caddy-redirects
 ```
 
 Check that both modules are in the binary:
@@ -248,7 +248,7 @@ key.
 ```sh
 go vet ./...
 go test -race ./...
-xcaddy build --with github.com/redirhub/caddy-redirhub=.
+xcaddy build --with github.com/redirhub/caddy-redirects=.
 ```
 
 ## License

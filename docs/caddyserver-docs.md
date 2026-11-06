@@ -23,10 +23,10 @@ own `404`s, are reported to RedirHub in the background, in batches, without dela
 This directive is not standard; build Caddy with it:
 
 ```
-xcaddy build --with github.com/redirhub/caddy-redirhub
+xcaddy build --with github.com/redirhub/caddy-redirects
 ```
 
-Module: [`http.handlers.redirhub`](https://github.com/redirhub/caddy-redirhub)
+Module: [`http.handlers.redirhub`](https://github.com/redirhub/caddy-redirects)
 
 ## Syntax
 

@@ -24,7 +24,7 @@ jobs:
       - name: Build Caddy with the module
         run: |
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-          xcaddy build --with github.com/redirhub/caddy-redirhub=. --output ./caddy
+          xcaddy build --with github.com/redirhub/caddy-redirects=. --output ./caddy
           ./caddy list-modules | grep -q '^http.handlers.redirhub$'
           ./caddy list-modules | grep -q '^tls.permission.redirhub$'
           REDIRHUB_INTEGRATION_KEY=test ./caddy validate --config examples/Caddyfile
