@@ -21,6 +21,7 @@ package redirects
 import (
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -33,7 +34,7 @@ import (
 )
 
 // Version is sent in the User-Agent of rules downloads and reports.
-const Version = "0.3.2"
+const Version = "0.4.0"
 
 func init() {
 	caddy.RegisterModule(Handler{})
@@ -225,16 +226,56 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	return nil
 }
 
-// redirect answers a rule; with @powered-by in the rules file it names the
-// platform in X-Powered-By, as the platform's own edge does.
+// redirect answers a rule: a redirect to its Location or, for a frame
+// rule, a page showing the Location in a full-window iframe. With
+// @powered-by in the rules file it names the platform in X-Powered-By, as
+// the platform's own edge does.
 func (h *Handler) redirect(w http.ResponseWriter, r *http.Request, rs *RuleSet, host *Host, rule Rule) {
 	location := rule.Location(r)
-	w.Header().Set("Location", location)
 	if rs.PoweredBy != "" {
 		w.Header().Set("X-Powered-By", rs.PoweredBy)
 	}
+	if rule.Frame {
+		page := framePage(location)
+		hdr := w.Header()
+		hdr.Set("Content-Type", "text/html; charset=utf-8")
+		hdr.Set("Content-Length", strconv.Itoa(len(page)))
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			_, _ = w.Write(page)
+		}
+		// Reported like a redirect, with body size 0 and the src as its
+		// destination.
+		h.report(r, host, http.StatusOK, 0, rule.Source, location)
+		return
+	}
+	w.Header().Set("Location", location)
 	w.WriteHeader(rule.Status)
 	h.report(r, host, rule.Status, 0, rule.Source, location)
+}
+
+// framePage is the frame page for src, as on RedirHub's edge: one
+// full-window iframe showing src, titled with its hostname. The src is the
+// Location exactly as a redirect would send it (an http(s) URL, as the rules
+// file only holds such targets), HTML-escaped and otherwise unchanged.
+func framePage(src string) []byte {
+	title := src
+	if u, err := url.Parse(src); err == nil && u.Hostname() != "" {
+		title = u.Hostname()
+	}
+	return []byte(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>` + html.EscapeString(title) + `</title>
+<style>html,body{margin:0;padding:0;height:100%;overflow:hidden}iframe{display:block;width:100%;height:100%;border:0}</style>
+</head>
+<body>
+<iframe src="` + html.EscapeString(src) + `" allowfullscreen></iframe>
+</body>
+</html>
+`)
 }
 
 // report queues one report line; a redirect carries the rule's source and

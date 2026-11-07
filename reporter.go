@@ -245,8 +245,8 @@ func (r *reporter) dropped(lines int, field zap.Field) {
 }
 
 // hitLine formats one Apache combined line with the absolute URL; a
-// redirect adds the rule applied (file=, its source column verbatim) and
-// the Location sent:
+// redirect or frame page (status 200) adds the rule applied (file=, its
+// source column verbatim) and the Location sent, or the frame's src:
 //
 //	203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://host/path?q HTTP/1.1" 301 0 "referer" "agent" file=host/path destination=https://...
 func hitLine(req *http.Request, host string, status, size int, now time.Time, source, location string) string {

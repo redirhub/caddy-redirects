@@ -16,3 +16,6 @@
 203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://shop.example.test/ HTTP/1.1" 302 0 "-" "-" file=shop.example.test/ destination=https://www.example.test/home
 203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://shop.example.test/gone/page?a=1 HTTP/1.1" 301 0 "-" "-" file=shop.example.test/* destination=https://www.example.test/gone/page?a=1
 203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://shop.example.test/caf%C3%A9 HTTP/1.1" 301 0 "-" "-" file=shop.example.test/* destination=https://www.example.test/caf%C3%A9
+203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.test/tour HTTP/1.1" 200 0 "-" "-" file=promo.example.test/tour destination=https://tour.example.test/?v=1
+203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.test/tour?ref=nl HTTP/1.1" 200 0 "-" "-" file=promo.example.test/tour destination=https://tour.example.test/?v=1
+203.0.113.9 - - [31/Oct/2026:19:10:00 +0000] "GET https://promo.example.test/vip HTTP/1.1" 302 0 "-" "-" file=promo.example.test/vip destination=https://promo.example.test/members

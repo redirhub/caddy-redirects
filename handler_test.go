@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -354,5 +355,63 @@ func TestPoweredByOnRedirectsOnly(t *testing.T) {
 	w := serve(t, env.h, &site{}, request("GET", "https://promo.example.com/old-pricing"))
 	if w.Code != 301 || w.Header().Get("X-Powered-By") != "" {
 		t.Errorf("got %d X-Powered-By %q", w.Code, w.Header().Get("X-Powered-By"))
+	}
+}
+
+const frameRules = "@format 1\n@hits HITS\n" +
+	"@host frame.example.test check=FAKEfrme\n" +
+	"frame.example.test/tour\thttps://tour.example.test/a b?x=1&y=\"2\"<\tframe\n" +
+	"frame.example.test/*\thttps://www.example.test/\tframe\tpq\n"
+
+func TestFramePage(t *testing.T) {
+	env := newTestEnv(t, frameRules)
+	s := &site{}
+	w := serve(t, env.h, s, request("GET", "https://frame.example.test/tour?ref=nl"))
+	if w.Code != 200 || w.Header().Get("Location") != "" || s.calls != 0 {
+		t.Fatalf("got %d Location %q, %d site calls", w.Code, w.Header().Get("Location"), s.calls)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	body := w.Body.String()
+	if w.Header().Get("Content-Length") != strconv.Itoa(len(body)) {
+		t.Errorf("Content-Length %q for %d bytes", w.Header().Get("Content-Length"), len(body))
+	}
+	// The src is HTML-escaped, never able to close the attribute.
+	for _, want := range []string{
+		`<iframe src="https://tour.example.test/a b?x=1&amp;y=&#34;2&#34;&lt;" allowfullscreen></iframe>`,
+		"<title>tour.example.test</title>",
+		`<meta charset="utf-8">`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %s:\n%s", want, body)
+		}
+	}
+	lines := env.hits.waitLines(t, 1)
+	if !strings.Contains(lines[0], `" 200 0 "-" "-" file=frame.example.test/tour destination=https://tour.example.test/a%20b?x=1&y=%222%22<`) {
+		t.Errorf("report line %s", lines[0])
+	}
+}
+
+func TestFramePageHEAD(t *testing.T) {
+	env := newTestEnv(t, frameRules)
+	get := serve(t, env.h, &site{}, request("GET", "https://frame.example.test/tour"))
+	w := serve(t, env.h, &site{}, request("HEAD", "https://frame.example.test/tour"))
+	if w.Code != 200 || w.Body.Len() != 0 || w.Header().Get("Content-Type") != "text/html; charset=utf-8" ||
+		w.Header().Get("Content-Length") != strconv.Itoa(get.Body.Len()) {
+		t.Fatalf("got %d, %d body bytes, headers %v", w.Code, w.Body.Len(), w.Header())
+	}
+}
+
+func TestFrameCatchAllOnSite404(t *testing.T) {
+	env := newTestEnv(t, frameRules)
+	w := serve(t, env.h, &site{}, request("GET", "https://frame.example.test/exists"))
+	if w.Code != 200 || w.Body.String() != "site page" {
+		t.Fatalf("working page: got %d %q", w.Code, w.Body.String())
+	}
+	w = serve(t, env.h, &site{}, request("GET", "https://frame.example.test/gone/page?a=1"))
+	if w.Code != 200 || w.Header().Get("X-Site-404") != "" || strings.Contains(w.Body.String(), "site 404 page") ||
+		!strings.Contains(w.Body.String(), `<iframe src="https://www.example.test/gone/page?a=1"`) {
+		t.Fatalf("got %d %v\n%s", w.Code, w.Header(), w.Body.String())
 	}
 }

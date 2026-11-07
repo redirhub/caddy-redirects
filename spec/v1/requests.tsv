@@ -23,3 +23,6 @@ catch-all only on the site's 404, p and q	GET	https://shop.example.test/gone/pag
 catch-all appends the escaped path	GET	https://shop.example.test/caf%C3%A9	-	-	404	redirect	301	https://www.example.test/caf%C3%A9	-	18
 catch-all leaves a working page alone	GET	https://shop.example.test/exists?a=1	-	-	200	site	200	-	-	-
 unlisted hostname passes through, its 404 not reported	GET	https://other.example.test/old-pricing	-	-	404	site	404	-	-	-
+frame page instead of a redirect	GET	https://promo.example.test/tour	-	-	200	frame	200	-	src=https://tour.example.test/?v=1	19
+frame page drops the query without q	GET	https://promo.example.test/tour?ref=nl	-	-	200	frame	200	-	src=https://tour.example.test/?v=1	20
+options a client does not carry out are ignored	GET	https://promo.example.test/vip	-	-	200	redirect	302	https://promo.example.test/members	-	21

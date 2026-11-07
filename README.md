@@ -8,6 +8,8 @@ them.
 - Redirects, short links, QR code links and whole website migrations, live within a second or two
   (a push from the rules server, `@notify`) or a minute (polling), without editing a Caddyfile or
   reloading Caddy.
+- Frame pages: a rule with status `frame` shows its target in a full-window frame, the visitor's
+  URL staying in the address bar.
 - 404 monitoring: the site's own 404s that no rule redirected are reported in the background, in
   batches, without delaying responses.
 - The last good copy of the rules is kept on disk, so a restart redirects at once even when the
@@ -172,6 +174,14 @@ exact rules **before** your site's own routes, and redirects to the hostname's c
 unchanged. The specification has the matching rules, the check answer and the report lines. What
 is particular to Caddy:
 
+- **Frame pages.** A rule with status `frame` is answered like a redirect (exact rules first, the
+  catch-all on a 404, the flags, `X-Powered-By`, the report), but with a `200` HTML page that shows
+  the target in one full-window `<iframe>` instead of a `Location`; the address bar keeps the
+  visitor's URL. Its report line has status `200` and the iframe's `src` as `destination=`.
+- **Options are ignored.** The rules file's options column (`password=`, `destinations=`,
+  `routing=`, `plugins=` and any other) is not carried out: such a rule redirects, or shows its
+  frame, to its target alone, as the specification allows.
+
 - **The catch-all and your site.** A 404 that a handler returns as an error (e.g. `file_server`)
   counts too. Responses other than 404 stream through without buffering, and a 404 the catch-all
   replaces is discarded as it is written, never held in memory. Unlike a domain connected to
@@ -218,9 +228,9 @@ Each report line is the Apache combined log format with the absolute URL:
 
 That is: the visitor's IP address (Caddy's client IP, which honours `trusted_proxies`), the
 time (UTC), the method, the requested URL with its query string, the protocol, the status, the
-response size, the `Referer` and the `User-Agent` (each cut to 1 KB); for a redirect also the rule's source and the
-`Location` sent. No cookies, other headers, request bodies or
-response bodies are sent. Only redirects, and 404s of hostnames with 404 reporting turned on
+response size, the `Referer` and the `User-Agent` (each cut to 1 KB); for a redirect or frame page
+also the rule's source and the `Location` sent (a frame page's `src`). No cookies, other headers, request bodies or
+response bodies are sent. Only redirects and frame pages, and 404s of hostnames with 404 reporting turned on
 (the **Report 404 pages** switch in the dashboard, or every hostname with `report_404 all`), are
 reported; all other traffic stays on your
 server. Requests are sent only to the `@hits` address in your rules file, with your integration
@@ -228,9 +238,9 @@ key.
 
 ## Limits
 
-- Redirect types the edge renders itself (HTML pages, frames, password-protected links,
-  destinations split between several targets) and wildcard hostnames need DNS mode; the rules
-  file only contains plain 301/302/307/308 redirects.
+- Password-protected links, destinations split between several targets, plugins, other pages the
+  edge renders itself, and wildcard hostnames need DNS mode: this module serves 301/302/307/308
+  redirects and frame pages, and ignores the options column.
 - The rules file is at most 32 MB here (RedirHub keeps each hostname under 50,000 rules).
 - Redirect changes take effect within a second or two while the push subscription (`@notify`)
   is connected, otherwise within the poll interval (`@refresh`, 60 seconds by default).
