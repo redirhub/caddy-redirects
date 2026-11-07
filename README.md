@@ -14,8 +14,9 @@ them.
   rules server is out of reach.
 - On-demand HTTPS only for the hostnames in your rules.
 
-The rules file format is open ([below](#rules-file-format-v1)). [RedirHub](https://www.redirhub.com)
-publishes it for you ("Integration Mode"): you manage the redirects in its dashboard, API or MCP
+The rules file format is open:
+[Integration Mode format v1](https://github.com/redirhub/integration-spec).
+[RedirHub](https://www.redirhub.com) publishes it for you ("Integration Mode"): you manage the redirects in its dashboard, API or MCP
 server and see the redirects and 404s in its analytics.
 
 The module adds two Caddy modules:
@@ -164,118 +165,48 @@ handler instances use it, and it survives config reloads.
 
 ## Behaviour
 
-Only **GET and HEAD** requests on a **hostname listed** in the rules are redirected or answered;
-everything else goes to the rest of the route unchanged. With `report_404 all`, the 404 answers of
-unlisted hostnames are reported too, but their responses are not changed.
+The module follows [format v1](https://github.com/redirhub/integration-spec): for **GET and HEAD**
+on a **hostname listed** in the rules it answers the check path (`/_redirhub/check`), redirects
+exact rules **before** your site's own routes, and redirects to the hostname's catch-all
+(`{host}/*`) only where your site answers **404**; everything else goes to the rest of the route
+unchanged. The specification has the matching rules, the check answer and the report lines. What
+is particular to Caddy:
 
-1. **Check path** (`/_redirhub/check`): answered with `200`, `text/plain`, `Cache-Control:
-   no-store` and `token=<check token> etag=<ETag of the rules in use>`. This proves the hostname
-   is yours and tells RedirHub whether Caddy has the latest rules.
-2. **Exact rules** (a source hostname and path) redirect **before** your site's own routes, even
-   when the page still exists.
-3. Otherwise your site answers. Only when it answers **404** and the hostname has a **catch-all
-   rule** (`{host}/*`), the 404 is discarded and Caddy redirects instead. A working site
-   is never taken over. A 404 that a handler returns as an error (e.g. `file_server`) counts too.
-   Unlike a domain connected to RedirHub by DNS, where the catch-all takes the whole domain, the
-   home page `/` and every other page your site serves stay with your site; to send them away
-   too, add an exact rule for each (e.g. `{host}/`).
-   Responses other than 404 stream through without buffering, and a 404 the catch-all replaces is
-   discarded as it is written, never held in memory.
+- **The catch-all and your site.** A 404 that a handler returns as an error (e.g. `file_server`)
+  counts too. Responses other than 404 stream through without buffering, and a 404 the catch-all
+  replaces is discarded as it is written, never held in memory. Unlike a domain connected to
+  RedirHub by DNS, where the catch-all takes the whole domain, the home page `/` and every other
+  page your site serves stay with your site; to send them away too, add an exact rule for each
+  (e.g. `{host}/`).
+- **`report_404 all`.** The 404 answers of hostnames that are not in the rules are reported too;
+  their responses are not changed.
+- **Push, with polling as the fallback.** When the rules file has a `@notify` line, Caddy keeps
+  one [Mercure](https://mercure.rocks) subscription (server-sent events) open per `rules_url` and
+  downloads the rules at once when a message arrives, so a change is served within a second or
+  two. The message is only a wake-up: nothing in it is trusted, Caddy downloads the file as on
+  every poll. Every new connection, the first and each reconnect, also downloads once (a change
+  may have come while it was closed). While the subscription is connected and healthy (the hub's
+  heartbeat arrives at least once a minute), Caddy polls only **once an hour**; the moment it
+  drops, it polls every `@refresh` seconds again and reconnects after 1 second, doubling up to 30
+  seconds (back to 1 second after a connection that lasted over a minute), resuming with
+  `Last-Event-ID`. The hub's token is never logged, nor the topic, which names the rules file.
+  Without `@notify`, Caddy polls every `@refresh` seconds.
+- **The last good copy is kept on disk**, in Caddy's data directory
+  (`$XDG_DATA_HOME/caddy/redirects/`), so a restart redirects immediately even when the rules
+  server is unreachable. Any failed download keeps it in use.
+- **Reports** are batched in memory and sent every 5 seconds, or at 100 lines or 64 KB. A failed
+  or rejected report is dropped, never retried, and never blocks or slows a request; when the
+  in-memory queue is full, lines are dropped.
+- **On-demand TLS.** With `permission redirects`, Caddy obtains a certificate only for hostnames
+  listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
+  them in the Caddyfile and without letting anyone else make Caddy request certificates.
 
-Matching uses the request's hostname (any letter case, port ignored) and path (case-sensitive,
-compared percent-decoded, leading and trailing slashes ignored as on RedirHub's edge: `/old/` and
-`//old` match the rule `{host}/old`); the scheme and query string are ignored. Without the `q` flag the
-query string is dropped from the target; with `q` it is kept; with `p` (catch-all only) the
-request path is appended to the target.
+## Rules file format
 
-**Push, with polling as the fallback.** When the rules file has a `@notify` line, Caddy keeps one
-[Mercure](https://mercure.rocks) subscription (server-sent events) open per `rules_url` and
-downloads the rules at once when a message arrives, so a change is served within a second or two.
-The message is only a wake-up: nothing in it is trusted, Caddy downloads the file as on every
-poll. Every new connection, the first and each reconnect, also downloads once (a change may have
-come while it was closed). While the subscription is connected and healthy (the hub's heartbeat
-arrives at least once a minute), Caddy polls only **once an hour**; the moment it drops, it polls
-every `@refresh` seconds again and reconnects after 1 second, doubling up to 30 seconds (back to 1
-second after a connection that lasted over a minute), resuming with `Last-Event-ID`. The hub's
-token is never logged, nor the topic, which names the rules file. Without `@notify`, Caddy polls
-every `@refresh` seconds, as before.
-
-**Fail open.** The rules are downloaded every 60 seconds (or the file's `@refresh`), with
-`If-None-Match`, a 5 second timeout and no credentials. Any failure (network, 404, 5xx, a file
-that cannot be read) keeps the last good copy. Until the first good copy, nothing is redirected
-and the check path is not answered. The last good copy is saved in Caddy's data directory
-(`$XDG_DATA_HOME/caddy/redirects/`), so a restart redirects immediately even when the rules
-server is unreachable.
-
-**Reporting.** Every redirect served (exact and catch-all), and for hostnames with
-`report404` (every hostname with `report_404 all`) the site's own 404s that no rule redirected,
-are reported to RedirHub. Lines are
-batched in memory and sent gzip-compressed every 5 seconds, or at 100 lines or 64 KB, with a 2
-second timeout. A failed or rejected report is dropped, never retried, and never blocks or slows
-a request; when the in-memory queue is full, lines are dropped. Other statuses are never reported.
-
-**X-Powered-By.** With a `@powered-by` line, every redirect from the rules (exact and catch-all)
-carries `X-Powered-By: <its value>`; the check path, the site's own answers and its 404s do not.
-Without the line, no header is set.
-
-**On-demand TLS.** With `permission redirects`, Caddy obtains a certificate only for hostnames
-listed in the rules, so you can serve `https://` for all your RedirHub hostnames without listing
-them in the Caddyfile and without letting anyone else make Caddy request certificates.
-
-## Rules file format v1
-
-The module reads a plain-text workspace rules file:
-
-```
-@format 1
-@refresh 60
-@notify https://service.redirhub.com/.well-known/mercure?topic=integration%2F<file token> token=<jwt>
-@hits https://rediredge.com/_edge/hits
-@check /_redirhub/check
-@powered-by RedirHub (integrated)
-@host promo.example.com check=EEEXQ4RS report404
-@host shop.example.com check=K3Vb9QmX
-promo.example.com/old-pricing	https://promo.example.com/pricing
-promo.example.com/promo	https://sale.example.com/	302
-shop.example.com/*	https://www.example.net/	301	pq
-```
-
-- `@format 1`: the first line. A file whose major version is not 1 counts as a failed download:
-  the last good copy stays in use. A file without `@format` is read as v1.
-- `@refresh <seconds>`: the poll interval, clamped to 30–3600 seconds, default 60.
-- `@hits <url>`: where reports go. Without it, nothing is reported.
-- `@check <path>`: the check path (default `/_redirhub/check`).
-- `@powered-by <value>` (optional): the rest of the line, trimmed, is sent verbatim as
-  `X-Powered-By` on every redirect from the rules. Printable ASCII, up to 128 bytes.
-- `@notify <subscribe url> token=<token>` (optional): a Mercure hub's subscribe URL with the
-  file's topic, and a bearer token allowed to subscribe to it. A message on the topic means "the
-  file changed, download it now". Clients that cannot keep a connection open ignore it and poll.
-- `@host <hostname> check=<token> [report404]`: one per served hostname. Unknown `key=value`
-  fields are ignored.
-- Unknown `@` directives are ignored. Every other non-empty line is a rule.
-- A rule line has tab-separated columns:
-  `source<TAB>target[<TAB>status[<TAB>flags[<TAB>options]]]`.
-  - **source**: hostname and path without a scheme, `{host}/path` (percent-encoded where
-    needed); `{host}/*` is the host's catch-all. It matches `http` and `https` requests alike.
-    Rules for hostnames without an `@host` line are ignored, and so is a source with a scheme,
-    without a path, or with a space, `"` or `\`.
-  - **target**: an absolute URL, used as is.
-  - **status**: 301, 302, 307 or 308; empty means 301.
-  - **flags** (may be empty): `p` appends the request path (catch-all only, no double slash),
-    `q` keeps the query string (with `?` or `&`). Flags are must-understand: a rule with an
-    unknown flag letter is skipped.
-  - **options**: space-separated `key=value`, may be ignored; further columns are ignored.
-- A line that cannot be parsed is skipped; the first rule for a source wins.
-- **Reports** (to `@hits`, `Authorization: Bearer <key>`): one Apache combined line with the
-  absolute URL per redirect or 404. A redirect appends `file=<the rule's source column,
-  verbatim>` and `destination=<the Location sent>` (spaces, `"` and `\` percent-encoded); a 404
-  appends nothing. RedirHub takes the link from `file=` and counts the line for the key's
-  workspace.
-
-**Golden sample.** [`spec/v1/`](spec/v1) holds a complete rules file, requests with the answers
-and report lines they must give, and what RedirHub logs from those lines. It is normative for
-format v1: this module's tests load it, and RedirHub's rules writer and edge test against copies
-of it.
+The module reads Integration Mode **format v1**, specified in
+[redirhub/integration-spec](https://github.com/redirhub/integration-spec): the rules file, the
+check path and the report lines. `spec/v1/` here is a copy of its golden sample: this module's
+tests load it, and CI fails when it differs from the specification's.
 
 ## Privacy
 

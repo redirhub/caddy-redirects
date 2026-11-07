@@ -13,9 +13,10 @@ import (
 	"time"
 )
 
-// The golden sample of format v1 in spec/v1 (see its README.md): the
-// module must read rules.txt, answer every case of requests.tsv as it says,
-// and report exactly the lines of reports.txt.
+// The golden sample of format v1 in spec/v1, a copy of redirhub/integration-spec's
+// (its README.md there says what each file is): the module must read rules.txt,
+// answer every case of requests.tsv as it says, and report exactly the lines of
+// reports.txt.
 
 const specDir = "spec/v1"
 
