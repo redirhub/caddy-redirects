@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"html"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -122,7 +124,15 @@ func TestSpecRulesFileParses(t *testing.T) {
 	if r, ok := promo.Exact["/spring"]; !ok || r.Status != 307 {
 		t.Errorf("a rule with an unknown option must be kept: %+v", r)
 	}
-	if len(promo.Exact) != 4 || promo.CatchAll != nil || len(shop.Exact) != 1 || shop.CatchAll == nil {
+	if r, ok := promo.Exact["/tour"]; !ok || !r.Frame || r.Status != 200 || r.Target != "https://tour.example.test/?v=1" {
+		t.Errorf("a frame rule: %+v", r)
+	}
+	// password=, destinations=, routing= and plugins= are ignored: a plain
+	// 302.
+	if r, ok := promo.Exact["/vip"]; !ok || r.Frame || r.Status != 302 || r.Target != "https://promo.example.test/members" {
+		t.Errorf("a rule with options this module ignores: %+v", r)
+	}
+	if len(promo.Exact) != 6 || promo.CatchAll != nil || len(shop.Exact) != 1 || shop.CatchAll == nil {
 		t.Errorf("rules: promo %d exact, shop %d exact, catch-all %v", len(promo.Exact), len(shop.Exact), shop.CatchAll)
 	}
 	if r := shop.CatchAll; r.Source != "shop.example.test/*" || r.Status != 301 || !r.AppendPath || !r.KeepQuery {
@@ -171,6 +181,8 @@ func TestSpecRequestsAndReports(t *testing.T) {
 			if w.Header().Get("X-Powered-By") != "RedirHub (integrated)" {
 				t.Errorf("%s: X-Powered-By = %q", c.name, w.Header().Get("X-Powered-By"))
 			}
+		case "frame":
+			checkSpecFrame(t, c, w.Header(), w.Body.String())
 		case "site":
 			if s.calls != 1 || w.Header().Get("X-Powered-By") != "" {
 				t.Errorf("%s: the site must answer (%d calls, X-Powered-By %q)", c.name, s.calls, w.Header().Get("X-Powered-By"))
@@ -202,6 +214,32 @@ func TestSpecRequestsAndReports(t *testing.T) {
 	}
 	if body := strings.Join(got, "\n") + "\n"; body != string(readSpec(t, "reports.txt")) {
 		t.Errorf("the reports differ from spec/v1/reports.txt:\n%s", body)
+	}
+}
+
+// iframeSrc matches an <iframe> tag and its src attribute.
+var iframeSrc = regexp.MustCompile(`<iframe\s[^>]*\bsrc="([^"]*)"`)
+
+// checkSpecFrame checks a frame page: HTML with exactly one <iframe>,
+// whose src, HTML-unescaped, is the body column's src=, and X-Powered-By.
+func checkSpecFrame(t *testing.T, c specCase, hdr http.Header, body string) {
+	t.Helper()
+	src, ok := strings.CutPrefix(c.body, "src=")
+	if !ok {
+		t.Fatalf("%s: frame body column %q", c.name, c.body)
+	}
+	if ct := hdr.Get("Content-Type"); ct != "text/html; charset=utf-8" {
+		t.Errorf("%s: Content-Type = %q", c.name, ct)
+	}
+	if hdr.Get("X-Powered-By") != "RedirHub (integrated)" {
+		t.Errorf("%s: X-Powered-By = %q", c.name, hdr.Get("X-Powered-By"))
+	}
+	if n := strings.Count(body, "<iframe"); n != 1 {
+		t.Fatalf("%s: %d <iframe> in\n%s", c.name, n, body)
+	}
+	m := iframeSrc.FindStringSubmatch(body)
+	if m == nil || html.UnescapeString(m[1]) != src {
+		t.Errorf("%s: iframe src %q, want %q", c.name, m, src)
 	}
 }
 

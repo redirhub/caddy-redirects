@@ -79,13 +79,17 @@ type Host struct {
 	CatchAll *Rule
 }
 
-// Rule is one redirect.
+// Rule is one redirect or frame page.
 type Rule struct {
 	// Source is the rule's source column as written, reported back with
 	// each redirect it serves.
-	Source     string
-	Target     string
-	Status     int
+	Source string
+	Target string
+	// Status is the redirect status; 200 for a frame page.
+	Status int
+	// Frame answers with a page that shows the Location in a full-window
+	// iframe instead of redirecting (status column "frame").
+	Frame      bool
 	AppendPath bool
 	KeepQuery  bool
 }
@@ -233,8 +237,10 @@ func (rs *RuleSet) parseDirective(line string, f []string) error {
 // parseRuleLine parses
 // source<TAB>target[<TAB>status[<TAB>flags[<TAB>options]]], the source
 // a hostname and path without a scheme (host/path, host/* the catch-all).
-// Flags are must-understand: an unknown letter skips the rule. Options
-// (space-separated key=value) and any further columns are ignored.
+// The status is 301, 302, 307, 308 or frame. Flags are must-understand:
+// an unknown letter skips the rule. Options (space-separated key=value,
+// password=, destinations=, routing=, plugins= among them) and any further
+// columns are ignored: such a rule answers as if they were absent.
 func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok bool) {
 	f := strings.Split(line, "\t")
 	if len(f) < 2 {
@@ -251,7 +257,9 @@ func parseRuleLine(line string) (host, path string, catchAll bool, rule Rule, ok
 		return "", "", false, Rule{}, false
 	}
 	rule = Rule{Source: source, Target: target, Status: http.StatusMovedPermanently}
-	if len(f) >= 3 && strings.TrimSpace(f[2]) != "" {
+	if len(f) >= 3 && strings.TrimSpace(f[2]) == "frame" {
+		rule.Status, rule.Frame = http.StatusOK, true
+	} else if len(f) >= 3 && strings.TrimSpace(f[2]) != "" {
 		code, err := strconv.Atoi(strings.TrimSpace(f[2]))
 		if err != nil {
 			return "", "", false, Rule{}, false
@@ -330,7 +338,8 @@ func cleanETag(etag string) string {
 	return strings.Trim(etag, `"`)
 }
 
-// Location builds the redirect target for a request.
+// Location builds the redirect target for a request, and a frame page's
+// iframe src.
 //
 // With AppendPath the escaped request path is appended to the target's
 // path without a double slash; with KeepQuery the request query is added

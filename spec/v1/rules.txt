@@ -11,5 +11,7 @@ promo.example.test/old-pricing	https://promo.example.test/pricing
 promo.example.test/preise/%C3%BCber-uns	https://promo.example.test/about	308
 promo.example.test/promo	https://sale.example.test/?src=promo	302	q
 promo.example.test/spring	https://promo.example.test/sale	307		future=1
+promo.example.test/tour	https://tour.example.test/?v=1	frame
+promo.example.test/vip	https://promo.example.test/members	302		destinations=https://promo.example.test/members-b password=$2y$10$FAKEhashFAKEhashFAKEhashFAKEhashFAKEhashFAKEhashFAKEh plugins=nobot routing=random
 shop.example.test/	https://www.example.test/home	302
 shop.example.test/*	https://www.example.test/	301	pq

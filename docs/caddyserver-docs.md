@@ -18,13 +18,19 @@ For `GET` and `HEAD` requests on a hostname listed in the rules:
   ownership of the hostname to RedirHub;
 - a rule for the exact hostname and path (any scheme) redirects before the rest of the route;
 - a host's catch-all rule redirects only when the rest of the route answers `404`;
-- with `@powered-by <value>` in the rules file, those redirects carry `X-Powered-By: <value>`.
+- a rule with status `frame` answers the same way, but with a `200` HTML page showing the target
+  in one full-window `<iframe>` instead of a redirect;
+- with `@powered-by <value>` in the rules file, those redirects and frame pages carry
+  `X-Powered-By: <value>`.
+
+A rule's options (`password=`, `destinations=`, `routing=`, `plugins=`, ...) are ignored: it
+redirects, or shows its frame, to its target alone.
 
 All other requests pass through unchanged. If the rules cannot be downloaded, the last good copy
 stays in use; before the first copy, nothing is redirected. Redirects, and optionally the site's
 own `404`s, are reported to RedirHub in the background, in batches, without delaying responses;
 a redirect's report names the rule applied (`file=`, the rule's source column, verbatim) and the
-`Location` sent.
+`Location` sent (for a frame page, status `200` and the iframe's `src`).
 
 This directive is not standard; build Caddy with it:
 

@@ -17,3 +17,6 @@ client_ip	method	url	status	referer	user_agent	file	destination
 203.0.113.9	GET	https://shop.example.test/	302	-	-	shop.example.test/	https://www.example.test/home
 203.0.113.9	GET	https://shop.example.test/gone/page?a=1	301	-	-	shop.example.test	https://www.example.test/gone/page?a=1
 203.0.113.9	GET	https://shop.example.test/caf%C3%A9	301	-	-	shop.example.test	https://www.example.test/caf%C3%A9
+203.0.113.9	GET	https://promo.example.test/tour	200	-	-	promo.example.test/tour	https://tour.example.test/?v=1
+203.0.113.9	GET	https://promo.example.test/tour?ref=nl	200	-	-	promo.example.test/tour	https://tour.example.test/?v=1
+203.0.113.9	GET	https://promo.example.test/vip	302	-	-	promo.example.test/vip	https://promo.example.test/members
