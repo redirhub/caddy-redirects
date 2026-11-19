@@ -1,6 +1,7 @@
 # caddy-redirects
 
-**Bulk redirects and 404 monitoring for [Caddy](https://caddyserver.com) v2.** Your domains keep
+**Manage Caddy redirects from a web dashboard: bulk redirects and 404 monitoring for
+[Caddy](https://caddyserver.com) v2.** Your domains keep
 pointing at your own Caddy server; Caddy serves thousands of redirects from a remote rules file
 and reports every redirect and every 404 back, so broken links show up before your visitors find
 them.
@@ -33,9 +34,30 @@ Caddy's own [`redir`](https://caddyserver.com/docs/caddyfile/directives/redir) a
 static rules. This module is for redirect sets that change, many domains or many Caddy servers,
 migrations, and people who edit redirects without touching Caddy.
 
+## A web UI for Caddy redirects
+
+Caddy has no screen for redirects: they live in the Caddyfile or the JSON config, and a change
+means editing the config and reloading (or calling the admin API). With this module the redirects
+live in [RedirHub](https://www.redirhub.com)'s web dashboard instead. Add, edit or bulk-import
+redirects and short links there, or through its API or MCP server, and every Caddy server that
+uses your rules address serves them within seconds. Marketing and SEO teams can change redirects
+without access to the server, and the redirects and 404s each Caddy server sees show up in
+RedirHub's analytics.
+
+It manages redirects only: reverse proxies, certificates and the rest of your Caddy config stay
+where they are. For a UI over the whole Caddy config, look at the web UIs built on Caddy's admin
+API.
+
 ## Install
 
-Build Caddy with the module using [xcaddy](https://github.com/caddyserver/xcaddy):
+Pick `github.com/redirhub/caddy-redirects` on [Caddy's download page](https://caddyserver.com/download),
+or add it to an installed Caddy:
+
+```sh
+caddy add-package github.com/redirhub/caddy-redirects
+```
+
+Or build Caddy with the module using [xcaddy](https://github.com/caddyserver/xcaddy):
 
 ```sh
 xcaddy build --with github.com/redirhub/caddy-redirects
